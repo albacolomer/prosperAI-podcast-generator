@@ -2,6 +2,7 @@ export const ROUTES = {
   home: "/",
   episodes: "/episodes",
   dashboard: "/dashboard",
+  newsDebug: "/news-debug",
 } as const
 
 export const STORAGE_KEYS = {
