@@ -3,10 +3,17 @@ import type { Plugin } from "vite"
 
 type ApiHandler = (request: Request) => Promise<Response>
 
+const SERVER_ONLY_ENV = ["GNEWS_API_KEY", "OPENAI_API_KEY", "OPENAI_RANKING_MODEL"]
+
+const routes = [
+  { path: "/api/news", module: "/api/news.ts", method: "GET" },
+  { path: "/api/rank-news", module: "/api/rank-news.ts", method: "POST" },
+] as const
+
 /**
- * Dev-only stand-in for Vercel: serves GET /api/news from `npm run dev` by running the
- * same handler that api/news.ts exports. The API key is read from .env.local into the
- * dev server's process only — it has no VITE_ prefix, so it is never sent to the browser.
+ * Dev-only stand-in for Vercel: serves the api/ routes from `npm run dev` by running the
+ * same handlers those files export. API keys are read from .env.local into the dev server's
+ * process only — they have no VITE_ prefix, so they are never sent to the browser.
  */
 export function devApi(): Plugin {
   return {
@@ -14,29 +21,41 @@ export function devApi(): Plugin {
     apply: "serve",
     configureServer(server) {
       const env = loadEnv(server.config.mode, server.config.root, "")
-      process.env.GNEWS_API_KEY ??= env.GNEWS_API_KEY
+      for (const key of SERVER_ONLY_ENV) {
+        if (env[key]) process.env[key] ??= env[key]
+      }
 
-      server.middlewares.use("/api/news", async (req, res) => {
-        res.setHeader("Content-Type", "application/json")
-        if (req.method !== "GET") {
-          res.statusCode = 405
-          res.end(JSON.stringify({ error: "Method not allowed" }))
-          return
-        }
+      for (const route of routes) {
+        server.middlewares.use(route.path, async (req, res) => {
+          res.setHeader("Content-Type", "application/json")
+          if (req.method !== route.method) {
+            res.statusCode = 405
+            res.end(JSON.stringify({ error: "Method not allowed" }))
+            return
+          }
 
-        try {
-          // Loaded through Vite so edits to api/ and server/ are picked up without a restart.
-          const { GET } = (await server.ssrLoadModule("/api/news.ts")) as { GET: ApiHandler }
-          const url = `http://${req.headers.host ?? "localhost"}${req.originalUrl ?? req.url ?? ""}`
-          const response = await GET(new Request(url))
-          res.statusCode = response.status
-          res.end(await response.text())
-        } catch (error) {
-          server.config.logger.error(`[dev-api] /api/news failed: ${error instanceof Error ? error.message : error}`)
-          res.statusCode = 500
-          res.end(JSON.stringify({ error: "Internal error in /api/news" }))
-        }
-      })
+          try {
+            // Loaded through Vite so edits to api/ and server/ are picked up without a restart.
+            const handlers = (await server.ssrLoadModule(route.module)) as Record<string, ApiHandler>
+            const url = `http://${req.headers.host ?? "localhost"}${req.originalUrl ?? req.url ?? ""}`
+            const init: RequestInit = { method: route.method }
+            if (route.method === "POST") {
+              const chunks: Buffer[] = []
+              for await (const chunk of req) chunks.push(chunk as Buffer)
+              init.body = Buffer.concat(chunks)
+            }
+            const response = await handlers[route.method](new Request(url, init))
+            res.statusCode = response.status
+            res.end(await response.text())
+          } catch (error) {
+            server.config.logger.error(
+              `[dev-api] ${route.path} failed: ${error instanceof Error ? error.message : error}`,
+            )
+            res.statusCode = 500
+            res.end(JSON.stringify({ error: `Internal error in ${route.path}` }))
+          }
+        })
+      }
     },
   }
 }
