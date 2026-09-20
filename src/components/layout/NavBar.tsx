@@ -14,7 +14,7 @@ export function NavBar() {
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
         <NavLink to={ROUTES.home} className="flex items-center gap-2 font-semibold tracking-tight text-foreground">
           <AudioLines className="size-6 text-primary" strokeWidth={2.5} />
-          <span className="text-base">Echo</span>
+          <span className="text-base">ProsperPod</span>
         </NavLink>
 
         <nav className="hidden items-center gap-1 md:flex">

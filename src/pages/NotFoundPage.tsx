@@ -4,7 +4,7 @@ import { useDocumentTitle } from "@/hooks/useDocumentTitle"
 import { ROUTES } from "@/lib/constants"
 
 export function NotFoundPage() {
-  useDocumentTitle("Echo — Page Not Found")
+  useDocumentTitle("ProsperPod — Page Not Found")
   return (
     <div className="flex flex-col items-center justify-center gap-3 py-24 text-center">
       <p className="text-sm font-medium text-muted-foreground">404</p>

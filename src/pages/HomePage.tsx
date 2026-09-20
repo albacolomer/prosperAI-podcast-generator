@@ -15,7 +15,7 @@ import { usePodcastSettings } from "@/hooks/usePodcastSettings"
 const GENERATE_DELAY_MS = 1600
 
 export function HomePage() {
-  useDocumentTitle("Echo — Home")
+  useDocumentTitle("ProsperPod — Home")
 
   const { interests, addInterest, removeInterest, toggleInterestSelected } = useInterests()
   const { settings, updateDraft, save, isDirty } = usePodcastSettings()

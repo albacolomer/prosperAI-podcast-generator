@@ -3,4 +3,4 @@ export const mockCurrentUser = {
   initials: "A",
 }
 
-export const PODCAST_SHOW_NAME = "Echo Daily"
+export const PODCAST_SHOW_NAME = "ProsperPod"

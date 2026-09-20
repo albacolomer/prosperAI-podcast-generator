@@ -3,11 +3,22 @@ import type { Plugin } from "vite"
 
 type ApiHandler = (request: Request) => Promise<Response>
 
-const SERVER_ONLY_ENV = ["GNEWS_API_KEY", "OPENAI_API_KEY", "OPENAI_RANKING_MODEL"]
+const SERVER_ONLY_ENV = [
+  "GNEWS_API_KEY",
+  "OPENAI_API_KEY",
+  "TAVILY_API_KEY",
+  "OPENAI_RANKING_MODEL",
+  "OPENAI_SCRIPT_MODEL",
+  "OPENAI_PLANNER_MODEL",
+  "OPENAI_VALIDATOR_MODEL",
+  "OPENAI_RESEARCH_MODEL",
+]
 
 const routes = [
   { path: "/api/news", module: "/api/news.ts", method: "GET" },
   { path: "/api/rank-news", module: "/api/rank-news.ts", method: "POST" },
+  { path: "/api/research-news", module: "/api/research-news.ts", method: "POST" },
+  { path: "/api/generate-script", module: "/api/generate-script.ts", method: "POST" },
 ] as const
 
 /**

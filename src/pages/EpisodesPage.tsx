@@ -6,7 +6,7 @@ import { useEpisodes } from "@/hooks/useEpisodes"
 import { useMockPlayer } from "@/hooks/useMockPlayer"
 
 export function EpisodesPage() {
-  useDocumentTitle("Echo — All Episodes")
+  useDocumentTitle("ProsperPod — All Episodes")
 
   const { episodes } = useEpisodes()
   const { feedback, setEpisodeFeedback } = useEpisodeFeedback()

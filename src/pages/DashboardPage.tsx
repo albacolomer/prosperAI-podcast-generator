@@ -14,7 +14,7 @@ import { mockDashboardMetrics } from "@/data/mockDashboardMetrics"
 import { useDocumentTitle } from "@/hooks/useDocumentTitle"
 
 export function DashboardPage() {
-  useDocumentTitle("Echo — Internal Dashboard")
+  useDocumentTitle("ProsperPod — Internal Dashboard")
 
   const [range, setRange] = useState<DashboardRange>(30)
 
@@ -32,7 +32,7 @@ export function DashboardPage() {
       <div>
         <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Internal</p>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Product analytics</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Usage metrics for the Echo team, not visible to end users.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Usage metrics for the ProsperPod team, not visible to end users.</p>
       </div>
 
       <StatCardGrid kpis={mockDashboardMetrics.kpis} />
