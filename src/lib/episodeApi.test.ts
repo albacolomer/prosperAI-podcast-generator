@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { EpisodeResult, ProgressEvent } from "@/types"
 import { EpisodeGenerationFailure, generateEpisode } from "./episodeApi"
 
-const settings = { interests: ["Artificial Intelligence", "Formula 1"], language: "en", durationMinutes: 10, tone: "conversational" as const }
+const settings = { interests: ["Artificial Intelligence", "Formula 1"], language: "en", tone: "conversational" as const }
 
 const result: EpisodeResult = {
   episode: {
@@ -56,8 +56,8 @@ describe("generateEpisode", () => {
   it("sends the current settings to /api/generate-episode and nothing else, in particular no voice", async () => {
     fetchMock.mockResolvedValue(streamOf([line({ type: "result", ...result })]))
 
-    // A stale voice on the settings object (an older saved setting) must not travel with the request.
-    await generateEpisode({ ...settings, voiceId: "nova", frequency: "daily" } as typeof settings)
+    // A stale voice or duration on the settings object (older saved settings) must not travel with the request.
+    await generateEpisode({ ...settings, voiceId: "nova", durationMinutes: 45, frequency: "daily" } as typeof settings)
 
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe("/api/generate-episode")
@@ -118,5 +118,17 @@ describe("generateEpisode", () => {
 
     fetchMock.mockResolvedValue(new Response("<html>", { status: 502 }))
     await expect(generateEpisode(settings)).rejects.toThrow("Episode request failed (502)")
+  })
+
+  it("shows the preflight's specific message, as a failure with no stage, when the server refuses to start", async () => {
+    const message = "ELEVENLABS_VOICE_ID is not a valid ElevenLabs voice id (letters and digits only, no spaces or quotes)."
+    fetchMock.mockResolvedValue(Response.json({ error: message }, { status: 503 }))
+    const onProgress = vi.fn()
+
+    const error = await generateEpisode({ ...settings, onProgress }).catch((thrown: unknown) => thrown)
+
+    expect(error).toBeInstanceOf(EpisodeGenerationFailure)
+    expect(error).toMatchObject({ message, stage: undefined })
+    expect(onProgress).not.toHaveBeenCalled()
   })
 })

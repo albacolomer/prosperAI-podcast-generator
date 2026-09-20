@@ -2,6 +2,8 @@ import { randomBytes } from "node:crypto"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
+import type { ScriptResponse } from "../../src/types/script.js"
+import type { ValidationIssue } from "../../src/types/validation.js"
 
 /** `<slug>-<8 hex>`: lowercase words joined by hyphens, so an id can never contain a path separator. */
 const EPISODE_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
@@ -40,10 +42,24 @@ export function defaultStorageDir(): string {
   return path.join(process.cwd(), ".generated", "episodes")
 }
 
+/** A script that did not pass validation, kept for inspection: what was written, what was wrong with it and what the writer was told. */
+export interface FailedScriptRecord {
+  attempt: number
+  maxAttempts: number
+  /** The blocking issues the writer was given for this attempt (empty for the first). */
+  feedback: readonly ValidationIssue[]
+  script: ScriptResponse
+}
+
+/** Where failed scripts go, inside the episode directory (the audio endpoint only ever reads `<id>.mp3` there). */
+export const FAILED_SCRIPTS_DIR = "failed-scripts"
+
 export interface EpisodeStore {
   /** Saves the exact MP3 bytes ElevenLabs returned and returns the id the audio endpoint serves them under. */
   save(input: { audio: Uint8Array; title: string }): Promise<{ id: string }>
   read(id: string): Promise<Uint8Array | undefined>
+  /** Debug only: writes one JSON file per failed script attempt. Returns the file's name. */
+  saveFailedScript(record: FailedScriptRecord): Promise<string>
 }
 
 export function createEpisodeStore(dir: string = defaultStorageDir()): EpisodeStore {
@@ -63,6 +79,14 @@ export function createEpisodeStore(dir: string = defaultStorageDir()): EpisodeSt
       } catch {
         return undefined
       }
+    },
+    async saveFailedScript({ attempt, maxAttempts, feedback, script }) {
+      const savedAt = new Date().toISOString()
+      const name = `${savedAt.replace(/[:.]/g, "-")}-attempt-${attempt}-${randomBytes(2).toString("hex")}.json`
+      const folder = path.join(dir, FAILED_SCRIPTS_DIR)
+      await mkdir(folder, { recursive: true })
+      await writeFile(path.join(folder, name), JSON.stringify({ savedAt, attempt, maxAttempts, feedbackGiven: feedback, script }, null, 2))
+      return name
     },
   }
 }

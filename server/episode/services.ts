@@ -1,5 +1,5 @@
 import { generateAudio } from "../audio/audio.js"
-import { createElevenLabsClient, DEFAULT_MODEL } from "../audio/elevenlabs.js"
+import { createElevenLabsClient, modelIdFrom } from "../audio/elevenlabs.js"
 import { GNewsProvider } from "../news/providers/gnews.js"
 import { createNewsService } from "../news/service.js"
 import { createOpenAiRankModel, DEFAULT_RANKING_MODEL } from "../ranking/openai.js"
@@ -62,30 +62,34 @@ export function createPipelineServices(env: NodeJS.ProcessEnv): PipelineServices
           modelName: researchModel,
         },
       ),
-    script: (input, progress) => {
+    script: (input, progress, retry) => {
       const planner = createOpenAiPlannerModel({ apiKey: openAiKey, modelName: plannerModel })
       const writer = createOpenAiScriptModel({ apiKey: openAiKey, modelName: scriptModel })
-      return generateEpisode(input, {
-        planner: { model: planner, modelName: plannerModel },
-        // The stages are unchanged. The writer only runs once the plan has been accepted, so wrapping its model call is how
-        // the pipeline learns that planning is over (the planner itself validates its plan after its model call returns).
-        writer: {
-          model: async (prompt) => {
-            progress.planned()
-            const answer = await writer(prompt)
-            progress.written()
-            return answer
+      return generateEpisode(
+        input,
+        {
+          planner: { model: planner, modelName: plannerModel },
+          // The stages are unchanged. The writer only runs once the plan has been accepted, so wrapping its model call is how
+          // the pipeline learns that planning is over (the planner itself validates its plan after its model call returns).
+          writer: {
+            model: async (prompt) => {
+              progress.planned()
+              const answer = await writer(prompt)
+              progress.written()
+              return answer
+            },
+            modelName: scriptModel,
           },
-          modelName: scriptModel,
+          reviewer: { model: createOpenAiReviewModel({ apiKey: openAiKey, modelName: reviewModel }), modelName: reviewModel },
         },
-        reviewer: { model: createOpenAiReviewModel({ apiKey: openAiKey, modelName: reviewModel }), modelName: reviewModel },
-      })
+        retry,
+      )
     },
     voice: (script) =>
       generateAudio(script, {
         client: createElevenLabsClient({ apiKey: elevenLabsKey }),
         voiceId: env.ELEVENLABS_VOICE_ID,
-        modelId: env.ELEVENLABS_MODEL_ID || DEFAULT_MODEL,
+        modelId: modelIdFrom(env),
       }),
     store: createEpisodeStore(),
   }

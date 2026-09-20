@@ -2,13 +2,14 @@ import { Calendar, ChevronUp, Clock, Globe, MessageSquareText, Settings2 } from 
 import { type ReactNode, useState } from "react"
 import { CustomScheduleFields } from "@/components/settings/CustomScheduleFields"
 import { DeliveryTimePicker } from "@/components/settings/DeliveryTimePicker"
-import { DurationSlider } from "@/components/settings/DurationSlider"
 import { LanguageSelect } from "@/components/settings/LanguageSelect"
 import { ScheduleFrequencySelect } from "@/components/settings/ScheduleFrequencySelect"
 import { ToneSelect } from "@/components/settings/ToneSelect"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { formatDuration } from "@/lib/format"
 import { cn } from "@/lib/utils"
+import { EPISODE_DURATION_MINUTES } from "@/types"
 import type { DayOfWeek, PodcastSettings } from "@/types"
 
 interface SettingsSidebarCardProps {
@@ -72,11 +73,12 @@ export function SettingsSidebarCard({ hasInterests, settings, updateDraft, isDir
           </SettingRow>
 
           <SettingRow icon={<Clock className="size-4 text-muted-foreground" />} label="Duration">
-            <DurationSlider
-              value={settings.durationMinutes}
-              onChange={(durationMinutes) => updateDraft({ durationMinutes })}
-              disabled={gated}
-            />
+            <div className="flex items-center gap-2">
+              <span className="rounded-full bg-secondary px-2.5 py-0.5 text-sm font-medium text-foreground">
+                {formatDuration(EPISODE_DURATION_MINUTES * 60)}
+              </span>
+              <span className="text-xs text-muted-foreground">Every episode is 10 minutes</span>
+            </div>
           </SettingRow>
 
           <SettingRow icon={<MessageSquareText className="size-4 text-muted-foreground" />} label="Tone">

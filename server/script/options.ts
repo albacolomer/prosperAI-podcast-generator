@@ -5,6 +5,8 @@
 
 export const MIN_DURATION_MINUTES = 5
 export const MAX_DURATION_MINUTES = 60
+/** The length of every episode the app generates: what fits one ElevenLabs request on the default model. The user cannot change it. */
+export const EPISODE_DURATION_MINUTES = 10
 /** Approximate spoken pace used to turn a duration into a word target. */
 export const WORDS_PER_MINUTE = 150
 

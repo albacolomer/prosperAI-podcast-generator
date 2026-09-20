@@ -130,6 +130,56 @@ describe("generateEpisode", () => {
     expect(result.validation.passed).toBe(true)
   })
 
+  describe("a second writing attempt (retry)", () => {
+    const issues = [
+      { source: "ai" as const, type: "unsupported-connection", severity: "error" as const, message: "The outro ties the stories together.", segmentIndex: 3, excerpt: "the same basic rule applies" },
+    ]
+
+    it("skips the planner, writes on the given plan and validates the result like a first attempt", async () => {
+      const first = await generateEpisode(input, { ...models(), log: () => {}, clock: ticking() })
+      const plan = vi.fn<PlannerModel>(async () => JSON.stringify(planAnswer))
+      const write = vi.fn<ScriptModel>(async () => JSON.stringify(scriptAnswer("Second draft.")))
+      const review = vi.fn<ReviewModel>(async () => JSON.stringify({ issues: [] }))
+
+      const second = await generateEpisode(input, { ...models({ plan, write, review }), log: () => {}, clock: ticking() }, { plan: first.plan, issues })
+
+      expect(plan).not.toHaveBeenCalled()
+      expect(write).toHaveBeenCalledTimes(1)
+      expect(review).toHaveBeenCalledTimes(1)
+      expect(second.plan).toBe(first.plan)
+      expect(second.script).toContain("Second draft.")
+      expect(second.validation.passed).toBe(true)
+      expect(second.stages.planner.durationMs).toBe(0)
+    })
+
+    it("tells the writer what was rejected, and only on the retry", async () => {
+      const first = await generateEpisode(input, { ...models(), log: () => {}, clock: ticking() })
+      const firstWrite = vi.fn<ScriptModel>(async () => JSON.stringify(scriptAnswer()))
+      await generateEpisode(input, { ...models({ write: firstWrite }), log: () => {}, clock: ticking() })
+      const retryWrite = vi.fn<ScriptModel>(async () => JSON.stringify(scriptAnswer()))
+      await generateEpisode(input, { ...models({ write: retryWrite }), log: () => {}, clock: ticking() }, { plan: first.plan, issues })
+
+      expect(firstWrite.mock.calls[0][0].user).not.toContain("REVISION REQUIRED")
+      const { user, system } = retryWrite.mock.calls[0][0]
+      expect(user).toContain("REVISION REQUIRED")
+      expect(user).toContain("unsupported-connection")
+      expect(user).toContain("the same basic rule applies")
+      // The plan and the evidence are the same, and the fixed instructions are untouched.
+      expect(user).toContain('"angle": "An angle"')
+      expect(system).toBe(firstWrite.mock.calls[0][0].system)
+    })
+
+    it("a retry that still breaks a rule is judged by the same validator", async () => {
+      const first = await generateEpisode(input, { ...models(), log: () => {}, clock: ticking() })
+      const long = { title: "T", segments: [segment("hook", words(100), ["b"]), segment("story", `${words(2500)} They said "we will absolutely win everything this year".`, ["b", "a"]), segment("outro", words(100))] }
+
+      const second = await generateEpisode(input, { ...models({ write: async () => JSON.stringify(long) }), log: () => {}, clock: ticking() }, { plan: first.plan, issues })
+
+      expect(second.validation.passed).toBe(false)
+      expect(second.validation.issues.map((i) => i.type)).toEqual(expect.arrayContaining(["word-count-exceeded", "quote-unverified"]))
+    })
+  })
+
   it("fails the request when the planner or the writer fails, without calling the later stages", async () => {
     const write = vi.fn<ScriptModel>(async () => JSON.stringify(scriptAnswer()))
     const review = vi.fn<ReviewModel>(async () => JSON.stringify({ issues: [] }))

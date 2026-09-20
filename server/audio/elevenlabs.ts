@@ -20,6 +20,17 @@ export function charLimitFor(modelId: string): number {
   return MODEL_CHAR_LIMITS[modelId] ?? UNKNOWN_MODEL_CHAR_LIMIT
 }
 
+/** The models whose per-request character limit is known here. */
+export const KNOWN_MODELS = Object.keys(MODEL_CHAR_LIMITS)
+
+/** ElevenLabs voice ids are 20 alphanumeric characters; checking the shape catches a mistyped setting before a paid call. */
+export const VOICE_ID_PATTERN = /^[A-Za-z0-9]{10,40}$/
+
+/** The model the server voices with: ELEVENLABS_MODEL_ID, or the default when it is unset or empty. */
+export function modelIdFrom(env: NodeJS.ProcessEnv): string {
+  return env.ELEVENLABS_MODEL_ID || DEFAULT_MODEL
+}
+
 export interface SpeechRequest {
   text: string
   voiceId: string

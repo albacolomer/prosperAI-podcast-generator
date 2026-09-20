@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 import { generateAudio } from "./audio.js"
+import { charLimitFor, DEFAULT_MODEL } from "./elevenlabs.js"
 import type { SpeechClient } from "./elevenlabs.js"
 import { AudioError } from "./errors.js"
 
@@ -55,5 +56,37 @@ describe("generateAudio", () => {
     const flash = setup({ modelId: "eleven_flash_v2_5" })
     await generateAudio("x".repeat(10_001), flash.config)
     expect(flash.synthesize).toHaveBeenCalledOnce()
+  })
+})
+
+describe("the model's character limit", () => {
+  it("knows the limit of eleven_flash_v2_5 (40,000) and of the default model (10,000)", () => {
+    expect(charLimitFor("eleven_flash_v2_5")).toBe(40_000)
+    expect(charLimitFor(DEFAULT_MODEL)).toBe(10_000)
+  })
+
+  it("voices a 10-minute script that runs a little over 10,000 characters in one request on eleven_flash_v2_5", async () => {
+    // A real run produced a script of 10,056 characters: refused by eleven_multilingual_v2, well within eleven_flash_v2_5.
+    const script = "x".repeat(10_056)
+    const multilingual = setup({ modelId: "eleven_multilingual_v2" })
+    expect((await failureOf(generateAudio(script, multilingual.config))).kind).toBe("script-too-long")
+    expect(multilingual.synthesize).not.toHaveBeenCalled()
+
+    const flash = setup({ modelId: "eleven_flash_v2_5" })
+    await generateAudio(script, flash.config)
+    expect(flash.synthesize).toHaveBeenCalledTimes(1)
+    expect(flash.synthesize.mock.calls[0][0].text).toHaveLength(10_056)
+  })
+
+  it("still refuses, without calling ElevenLabs, a script over the flash limit: the backstop stays", async () => {
+    const flash = setup({ modelId: "eleven_flash_v2_5" })
+    await generateAudio("x".repeat(40_000), flash.config)
+    expect(flash.synthesize).toHaveBeenCalledTimes(1)
+
+    const tooLong = setup({ modelId: "eleven_flash_v2_5" })
+    const error = await failureOf(generateAudio("x".repeat(40_001), tooLong.config))
+    expect(error.kind).toBe("script-too-long")
+    expect(error.message).toContain("40000")
+    expect(tooLong.synthesize).not.toHaveBeenCalled()
   })
 })

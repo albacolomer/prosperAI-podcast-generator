@@ -1,10 +1,9 @@
 import type { EpisodeResult, FailureStage, GenerationEvent, ProgressEvent, Tone } from "@/types"
 
-/** The user's settings, and nothing else: the voice is server configuration, so it is never part of the request. */
+/** The user's settings, and nothing else: the voice is server configuration and the duration is fixed, so neither is part of the request. */
 export interface GenerateEpisodeParams {
   interests: string[]
   language: string
-  durationMinutes: number
   tone: Tone
 }
 
@@ -38,7 +37,6 @@ function parseEvent(line: string): GenerationEvent | undefined {
 export async function generateEpisode({
   interests,
   language,
-  durationMinutes,
   tone,
   signal,
   onProgress,
@@ -47,7 +45,7 @@ export async function generateEpisode({
     method: "POST",
     headers: { "Content-Type": "application/json" },
     // Fields are picked explicitly so nothing else that is in the settings (a stale voice, say) is ever sent.
-    body: JSON.stringify({ interests, language, durationMinutes, tone }),
+    body: JSON.stringify({ interests, language, tone }),
     signal,
   })
 

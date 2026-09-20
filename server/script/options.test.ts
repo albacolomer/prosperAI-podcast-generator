@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import { LANGUAGE_NAMES, MAX_DURATION_MINUTES, MIN_DURATION_MINUTES, maxWordsFor, minWordsFor, targetWordsFor, TONE_IDS } from "./options.js"
+import { EPISODE_DURATION_MINUTES, LANGUAGE_NAMES, MAX_DURATION_MINUTES, MIN_DURATION_MINUTES, maxWordsFor, minWordsFor, targetWordsFor, TONE_IDS } from "./options.js"
 import { TONE_GUIDANCE } from "./tones.js"
 
 // The server keeps its own copy of the podcast options (it cannot use the client's `@/` alias, and the
@@ -38,6 +38,10 @@ describe("server options match the client", () => {
     const settings = clientFile("types/settings.ts")
     expect(settings).toContain(`MIN_DURATION_MINUTES = ${MIN_DURATION_MINUTES}`)
     expect(settings).toContain(`MAX_DURATION_MINUTES = ${MAX_DURATION_MINUTES}`)
+  })
+
+  it("uses the same fixed episode duration as the UI", () => {
+    expect(clientFile("types/settings.ts")).toContain(`EPISODE_DURATION_MINUTES = ${EPISODE_DURATION_MINUTES}`)
   })
 })
 

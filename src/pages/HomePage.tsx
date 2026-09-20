@@ -46,11 +46,10 @@ export function HomePage() {
 
   function handleGenerate() {
     if (!hasInterests || generating) return
-    // The user's settings are the whole request: the server runs the pipeline and owns the voice.
+    // The user's settings are the whole request: the server runs the pipeline and owns the voice and the 10-minute length.
     void generation.start({
       interests: selectedInterests.map((interest) => interest.label),
       language: settings.language,
-      durationMinutes: settings.durationMinutes,
       tone: settings.tone,
     })
   }

@@ -7,6 +7,8 @@ export type Tone = "conversational" | "informative" | "storytelling" | "reassuri
 
 export const MIN_DURATION_MINUTES = 5
 export const MAX_DURATION_MINUTES = 60
+/** Every generated episode is this long: what fits one ElevenLabs request. The Home page shows it but does not let the user change it. */
+export const EPISODE_DURATION_MINUTES = 10
 
 export interface PodcastSettings {
   language: string
@@ -19,7 +21,7 @@ export interface PodcastSettings {
 
 export const DEFAULT_PODCAST_SETTINGS: PodcastSettings = {
   language: "en",
-  durationMinutes: 10,
+  durationMinutes: EPISODE_DURATION_MINUTES,
   tone: "conversational",
   frequency: "daily",
   customDays: [],

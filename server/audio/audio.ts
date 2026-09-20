@@ -1,11 +1,8 @@
 import type { NewsLogger } from "../news/log.js"
 import { AudioError } from "./errors.js"
-import { charLimitFor } from "./elevenlabs.js"
+import { charLimitFor, VOICE_ID_PATTERN } from "./elevenlabs.js"
 import type { SpeechClient } from "./elevenlabs.js"
 import { audioLog } from "./log.js"
-
-// ElevenLabs voice ids are 20 alphanumeric characters; checking the shape catches a mistyped setting before a paid call.
-const VOICE_ID_PATTERN = /^[A-Za-z0-9]{10,40}$/
 
 interface AudioConfig {
   client: SpeechClient

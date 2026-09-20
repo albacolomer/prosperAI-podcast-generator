@@ -69,11 +69,15 @@ describe("POST /api/generate-episode", () => {
     expect(deps.voice).toHaveBeenCalledTimes(1)
   })
 
-  it("passes the request's settings on to the pipeline", async () => {
+  it("passes the request's settings on to the pipeline, always with a 10-minute duration", async () => {
     const deps = happyDeps()
     await (await run({ ...request, language: "fr", tone: "journalistic", durationMinutes: 20 }, deps)).text()
     expect(deps.news.fetchCandidateArticles).toHaveBeenCalledWith({ interests: request.interests })
-    expect(vi.mocked(deps.script).mock.calls[0][0]).toMatchObject({ language: "fr", tone: "journalistic", durationMinutes: 20 })
+    expect(vi.mocked(deps.script).mock.calls[0][0]).toMatchObject({ language: "fr", tone: "journalistic", durationMinutes: 10 })
+
+    const without = happyDeps()
+    await (await run({ interests: request.interests, language: "en", tone: "conversational" }, without)).text()
+    expect(vi.mocked(without.script).mock.calls[0][0]).toMatchObject({ durationMinutes: 10 })
   })
 
   it("reports a failed stage as an error event with the safe message", async () => {
@@ -114,8 +118,6 @@ describe("POST /api/generate-episode", () => {
     expect((await run({ ...request, interests: [] }, deps)).status).toBe(400)
     expect((await run({ ...request, language: "klingon" }, deps)).status).toBe(400)
     expect((await run({ ...request, tone: "angry" }, deps)).status).toBe(400)
-    expect((await run({ ...request, durationMinutes: 3 }, deps)).status).toBe(400)
-    expect((await run({ ...request, durationMinutes: 61 }, deps)).status).toBe(400)
     expect(deps.news.fetchCandidateArticles).not.toHaveBeenCalled()
   })
 
@@ -131,6 +133,52 @@ describe("POST /api/generate-episode", () => {
       expect(response.status).toBe(503)
       expect(await response.json()).toEqual({ error: "Episode generation is not configured" })
     }
+  })
+
+  describe("ElevenLabs preflight", () => {
+    const bad: [string, Record<string, string>, RegExp][] = [
+      ["a malformed voice id", { ELEVENLABS_VOICE_ID: '"JBFqnCBsd6RMkjVDRZzb"' }, /ELEVENLABS_VOICE_ID is not a valid/],
+      ["a key with a trailing line break", { ELEVENLABS_API_KEY: "xi-secret-key\n" }, /ELEVENLABS_API_KEY contains spaces/],
+      ["an unsupported model", { ELEVENLABS_MODEL_ID: "eleven_typo_v9" }, /ELEVENLABS_MODEL_ID is not a supported model/],
+    ]
+
+    it.each(bad)("answers 503 with a specific message, and starts no stage, for %s", async (_name, override, message) => {
+      const deps = happyDeps()
+      const { onProgress: _p, signal: _s, log: _l, clock: _c, ...services } = deps
+      const createServices = vi.fn(() => services)
+      const response = await handleGenerateEpisode(post(request), { env: { ...ENV, ...override } as NodeJS.ProcessEnv, createServices })
+
+      expect(response.status).toBe(503)
+      expect(response.headers.get("Content-Type")).toContain("application/json")
+      const { error } = (await response.json()) as { error: string }
+      expect(error).toMatch(message)
+      expect(error).not.toMatch(/xi-secret-key|JBFqnCBsd6RMkjVDRZzb|eleven_typo_v9/)
+      // Nothing that costs money was set up or called.
+      expect(createServices).not.toHaveBeenCalled()
+      expect(deps.news.fetchCandidateArticles).not.toHaveBeenCalled()
+      expect(deps.rank).not.toHaveBeenCalled()
+      expect(deps.research).not.toHaveBeenCalled()
+      expect(deps.script).not.toHaveBeenCalled()
+      expect(deps.voice).not.toHaveBeenCalled()
+    })
+
+    it("lets a valid configuration through to the pipeline", async () => {
+      const deps = happyDeps()
+      const response = await run(request, deps)
+      expect(response.status).toBe(200)
+      expect((await events(response)).at(-1)?.type).toBe("result")
+    })
+
+    it("lets eleven_flash_v2_5 through to the pipeline, which voices the script once", async () => {
+      const deps = happyDeps()
+      const { onProgress: _p, signal: _s, log: _l, clock: _c, ...services } = deps
+      const env = { ...ENV, ELEVENLABS_MODEL_ID: "eleven_flash_v2_5" } as NodeJS.ProcessEnv
+      const response = await handleGenerateEpisode(post(request), { env, createServices: () => services })
+
+      expect(response.status).toBe(200)
+      expect((await events(response)).at(-1)?.type).toBe("result")
+      expect(deps.voice).toHaveBeenCalledTimes(1)
+    })
   })
 
   it("the real endpoint is wired to the same handler", async () => {

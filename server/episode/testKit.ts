@@ -5,7 +5,7 @@ import type { ScriptValidation } from "../../src/types/validation.js"
 import { enrichedStory, planOf, segment } from "../script/fixtures.js"
 import type { PipelineDeps } from "./pipeline.js"
 import type { EpisodeRequest } from "./request.js"
-import type { EpisodeStore } from "./storage.js"
+import type { EpisodeStore, FailedScriptRecord } from "./storage.js"
 
 export const MP3 = new Uint8Array([0x49, 0x44, 0x33, 0x04, 0x00, 0xff, 0xfb, 0x90, 0x00])
 
@@ -55,10 +55,16 @@ export function scriptResponse(storyIds: string[], overrides: Partial<ScriptResp
   }
 }
 
-export const memoryStore = (): EpisodeStore & { saved: { audio: Uint8Array; title: string }[] } => {
+export const memoryStore = (): EpisodeStore & { saved: { audio: Uint8Array; title: string }[]; failedScripts: FailedScriptRecord[] } => {
   const saved: { audio: Uint8Array; title: string }[] = []
+  const failedScripts: FailedScriptRecord[] = []
   return {
     saved,
+    failedScripts,
+    saveFailedScript: vi.fn(async (record) => {
+      failedScripts.push(record)
+      return `failed-${failedScripts.length}.json`
+    }),
     save: vi.fn(async (input) => {
       saved.push(input)
       return { id: "ai-chips-race-cars-your-briefing-0a1b2c3d" }

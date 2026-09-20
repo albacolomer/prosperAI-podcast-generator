@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, rm } from "node:fs/promises"
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
@@ -79,22 +79,59 @@ describe("defaultStorageDir", () => {
   })
 })
 
-describe("parseEpisodeRequest", () => {
-  const settings = { interests: ["AI"], language: "en", durationMinutes: 10, tone: "conversational" }
+describe("saveFailedScript", () => {
+  const record = {
+    attempt: 2,
+    maxAttempts: 2,
+    feedback: [{ source: "ai" as const, type: "unsupported-connection", severity: "error" as const, message: "Outro links stories.", segmentIndex: 4 }],
+    script: { title: "A Title", script: "Words." } as never,
+  }
 
-  it("takes the user's settings and nothing else", () => {
-    expect(parseEpisodeRequest(settings)).toEqual({ ok: true, request: settings })
+  it("writes one JSON file per attempt under failed-scripts, with the attempt, the feedback and the script", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "prosperpod-failed-"))
+    const store = createEpisodeStore(dir)
+
+    const name = await store.saveFailedScript(record)
+    const other = await store.saveFailedScript({ ...record, attempt: 1, feedback: [] })
+
+    expect(name).toMatch(/^\d{4}-\d{2}-\d{2}T[\d-]+Z-attempt-2-[0-9a-f]{4}\.json$/)
+    expect(other).not.toBe(name)
+    const saved = JSON.parse(await readFile(path.join(dir, "failed-scripts", name), "utf8"))
+    expect(saved).toMatchObject({ attempt: 2, maxAttempts: 2, feedbackGiven: record.feedback, script: record.script })
+    expect(typeof saved.savedAt).toBe("string")
+  })
+
+  it("is never served as an episode: read() only knows <id>.mp3", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "prosperpod-failed-"))
+    const store = createEpisodeStore(dir)
+    const name = await store.saveFailedScript(record)
+
+    expect(await store.read(name.replace(/\.json$/, ""))).toBeUndefined()
+  })
+})
+
+describe("parseEpisodeRequest", () => {
+  const settings = { interests: ["AI"], language: "en", tone: "conversational" }
+  const fixed = { ...settings, durationMinutes: 10 }
+
+  it("takes the user's settings and fixes the duration at 10 minutes", () => {
+    expect(parseEpisodeRequest(settings)).toEqual({ ok: true, request: fixed })
   })
 
   it("drops a voice if one is sent", () => {
     const parsed = parseEpisodeRequest({ ...settings, voiceId: "abc", voice: "nova" })
-    expect(parsed).toEqual({ ok: true, request: settings })
+    expect(parsed).toEqual({ ok: true, request: fixed })
   })
 
-  it("rejects missing or out-of-range settings", () => {
+  it("ignores a duration a client sends: it is always 10 minutes", () => {
+    for (const durationMinutes of [3, 10.5, 20, 60, 61, "long"]) {
+      expect(parseEpisodeRequest({ ...settings, durationMinutes })).toEqual({ ok: true, request: fixed })
+    }
+  })
+
+  it("rejects missing or invalid settings", () => {
     expect(parseEpisodeRequest({ ...settings, interests: undefined }).ok).toBe(false)
-    expect(parseEpisodeRequest({ ...settings, durationMinutes: 4 }).ok).toBe(false)
-    expect(parseEpisodeRequest({ ...settings, durationMinutes: 10.5 }).ok).toBe(false)
+    expect(parseEpisodeRequest({ ...settings, tone: "angry" }).ok).toBe(false)
     expect(parseEpisodeRequest(null).ok).toBe(false)
   })
 })

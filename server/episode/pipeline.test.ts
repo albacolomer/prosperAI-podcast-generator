@@ -232,8 +232,30 @@ describe("generateFullEpisode", () => {
       const error = await failure(generateFullEpisode(request, deps))
       expect(error.stage).toBe("validation")
       expect(error.message).toBe("We couldn't validate this episode reliably.")
+      // Blocking issues earn one more writing attempt (see scriptRetry.test.ts), and no more.
+      expect(deps.script).toHaveBeenCalledTimes(2)
       expect(deps.voice).not.toHaveBeenCalled()
       expect(deps.store.saved).toEqual([])
+    })
+
+    it("validation: logs which issues blocked the script (errors only, shortened), so a failed gate can be diagnosed", async () => {
+      const failed = validation({ passed: false, wordCount: 1780 })
+      failed.issues = [
+        { source: "deterministic", type: "word-count-exceeded", severity: "error", message: "The script has 1780 words, over the 1725-word maximum (target 1500)." },
+        { source: "ai", type: "unsupported-connection", severity: "error", message: "The outro ties the stories together.", segmentIndex: 4, excerpt: "y".repeat(400) },
+        { source: "ai", type: "weak-transition", severity: "warning", message: "A transition is abrupt." },
+      ]
+      const log = vi.fn()
+      const deps = happyDeps({ script: vi.fn(async () => scriptResponse(["a", "b"], { validation: failed })), log })
+
+      await failure(generateFullEpisode(request, deps))
+
+      const lines = log.mock.calls.flat().join("\n")
+      expect(lines).toContain("1780 words, max 1725")
+      expect(lines).toContain("[deterministic] word-count-exceeded: The script has 1780 words")
+      expect(lines).toContain("[ai] unsupported-connection (segment 4): The outro ties the stories together.")
+      expect(lines).not.toContain("weak-transition")
+      expect(lines).not.toContain("y".repeat(301))
     })
 
     it("validation: a script whose AI review could not run is not voiced either", async () => {

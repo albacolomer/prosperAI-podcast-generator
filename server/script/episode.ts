@@ -1,4 +1,6 @@
+import type { EpisodePlan } from "../../src/types/plan.js"
 import type { ScriptResponse } from "../../src/types/script.js"
+import type { ValidationIssue } from "../../src/types/validation.js"
 import type { NewsLogger } from "../news/log.js"
 import { indexStory } from "./evidence.js"
 import { scriptLog } from "./log.js"
@@ -12,7 +14,16 @@ import { writeScript } from "./writer.js"
 import type { ScriptModel } from "./writer.js"
 
 /** What an episode needs to be produced: the user's choices and the researched stories (no plan, that is made here). */
-export type EpisodeInput = Omit<ScriptPromptInput, "plan">
+export type EpisodeInput = Omit<ScriptPromptInput, "plan" | "revision">
+
+/**
+ * A second writing attempt: the plan the first attempt was written from (planning is not repeated) and the blocking
+ * issues the validator found in that attempt's script.
+ */
+export interface ScriptRetry {
+  plan: EpisodePlan
+  issues: readonly ValidationIssue[]
+}
 
 interface EpisodeConfig {
   planner: { model: PlannerModel; modelName: string }
@@ -27,10 +38,13 @@ interface EpisodeConfig {
  *   -> Episode Planner (what to tell)  -> Script Writer (how to say it)  -> Script Validator (is it fit to voice).
  * Each stage stays independent and knows nothing about audio. A failed validation is reported in the response, not
  * repaired: the script is returned with `validation.passed === false` and its issues.
+ * With `retry`, the planner is skipped: the writer runs again on the given plan, told what the validator rejected, and
+ * the result is validated exactly like a first attempt. Whether to retry is the caller's decision.
  */
 export async function generateEpisode(
   input: EpisodeInput,
   { planner, writer, reviewer, log = scriptLog, clock = () => performance.now() }: EpisodeConfig,
+  retry?: ScriptRetry,
 ): Promise<ScriptResponse> {
   const startedAt = clock()
   const { stories, language, tone, durationMinutes } = input
@@ -44,8 +58,14 @@ export async function generateEpisode(
   }
   log(`Stories: ${stories.length} researched (${evidence.facts} facts, ${evidence.context} context, ${evidence.analysis} analysis, ${evidence.quotes} quotes)`)
 
-  const planned = await planEpisode(input, { model: planner.model, modelName: planner.modelName, log, clock })
-  const written = await writeScript({ ...input, plan: planned.plan }, { model: writer.model, log, clock })
+  if (retry) log(`Plan reused for a second writing attempt (${retry.issues.length} validation issues to fix)`)
+  const planned = retry
+    ? { plan: retry.plan, durationMs: 0 }
+    : await planEpisode(input, { model: planner.model, modelName: planner.modelName, log, clock })
+  const written = await writeScript(
+    { ...input, plan: planned.plan, ...(retry ? { revision: { issues: retry.issues } } : {}) },
+    { model: writer.model, log, clock },
+  )
   const validated = await validateScript(
     {
       segments: written.segments,

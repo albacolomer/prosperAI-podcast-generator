@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from "vitest"
+import type { ValidationIssue } from "../../src/types/validation.js"
 import { ScriptError } from "./errors.js"
 import { enrichedStory, plannedStory, planOf, segment } from "./fixtures.js"
 import { TONE_IDS } from "./options.js"
-import { buildScriptSystemPrompt } from "./prompt.js"
+import { buildScriptSystemPrompt, buildScriptUserPrompt } from "./prompt.js"
 import { TONE_GUIDANCE } from "./tones.js"
 import { countWords, parseModelOutput, reconstructScript, writeScript } from "./writer.js"
 import type { ScriptModel } from "./writer.js"
@@ -61,6 +62,59 @@ function write(model: ScriptModel, overrides: Partial<Parameters<typeof writeScr
     { model, log: () => {}, clock: () => 0 },
   )
 }
+
+describe("the revision addendum of a second attempt", () => {
+  const issue: ValidationIssue = { source: "ai", type: "unsupported-connection", severity: "error", message: "The outro ties the stories together.", segmentIndex: 3, excerpt: "the same basic rule applies" }
+  const userPrompt = (revision?: { issues: ValidationIssue[] }) => buildScriptUserPrompt({ interests: ["AI"], language: "en", durationMinutes: 10, tone: "conversational", stories, plan, revision })
+
+  it("is absent on a first attempt, and for an empty list of issues", () => {
+    expect(userPrompt()).not.toContain("REVISION")
+    expect(userPrompt({ issues: [] })).toBe(userPrompt())
+  })
+
+  it("lists each issue's type, segment, message and excerpt as structured data after the unchanged prompt", () => {
+    const first = userPrompt()
+    const revised = userPrompt({ issues: [issue, { ...issue, type: "quote-unverified", segmentIndex: undefined, excerpt: undefined }] })
+
+    expect(revised.startsWith(first)).toBe(true)
+    const listed = JSON.parse(revised.slice(revised.indexOf('{\n "validationIssues"'), revised.indexOf("\n\nRules for this rewrite")))
+    expect(listed.validationIssues).toEqual([
+      { type: "unsupported-connection", segment: 3, message: "The outro ties the stories together.", excerpt: "the same basic rule applies" },
+      { type: "quote-unverified", segment: null, message: "The outro ties the stories together.", excerpt: null },
+    ])
+  })
+
+  it("tells the writer to fix the issues without touching the plan, the evidence, the tone or the validation rules", () => {
+    const revised = userPrompt({ issues: [issue] })
+    for (const rule of [
+      "Fix every issue above",
+      "Keep the plan exactly",
+      "Use only the evidence listed above",
+      "Add no new factual claim",
+      "Do not invent, alter or translate a quote",
+      "Do not link stories",
+      "Keep the same tone, language and length target",
+      "Every rule in the instructions above still applies in full",
+    ]) {
+      expect(revised).toContain(rule)
+    }
+  })
+
+  it("keeps a long list and long texts bounded", () => {
+    const many = Array.from({ length: 30 }, (_, i) => ({ ...issue, message: "m".repeat(2000), excerpt: `e${i}`.repeat(500) }))
+    const revised = userPrompt({ issues: many })
+    const listed = JSON.parse(revised.slice(revised.indexOf('{\n "validationIssues"'), revised.indexOf("\n\nRules for this rewrite")))
+    expect(listed.validationIssues).toHaveLength(10)
+    expect(listed.validationIssues[0].message.length).toBeLessThanOrEqual(400)
+    expect(listed.validationIssues[0].excerpt.length).toBeLessThanOrEqual(400)
+  })
+
+  it("does not change what the writer is shown of the plan: same evidence, same order", () => {
+    const first = payloadOf(userPrompt())
+    const revised = payloadOf(userPrompt({ issues: [issue] }))
+    expect(revised).toEqual(first)
+  })
+})
 
 describe("writeScript", () => {
   it("returns the title, structured segments, the reconstructed script, the word count and timing", async () => {

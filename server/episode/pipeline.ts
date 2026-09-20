@@ -3,6 +3,7 @@ import type { EpisodeResult, FailureStage, PipelineStage, ProgressEvent } from "
 import type { RankingResponse } from "../../src/types/ranking.js"
 import type { EnrichedStory, ResearchResponse } from "../../src/types/research.js"
 import type { ScriptResponse } from "../../src/types/script.js"
+import type { ValidationIssue } from "../../src/types/validation.js"
 import { storiesForDuration } from "../../src/lib/storyBudget.js"
 import { OUTPUT_FORMAT } from "../audio/elevenlabs.js"
 import type { NewsLogger } from "../news/log.js"
@@ -10,12 +11,12 @@ import type { FetchNewsOptions } from "../news/service.js"
 import type { RankStoriesInput } from "../ranking/ranker.js"
 import { MAX_CANDIDATES } from "../ranking/request.js"
 import { MAX_RESEARCH_STORIES } from "../research/request.js"
-import type { EpisodeInput } from "../script/episode.js"
+import type { EpisodeInput, ScriptRetry } from "../script/episode.js"
 import { parseScriptRequest } from "../script/request.js"
 import { EpisodeGenerationError } from "./errors.js"
 import { episodeLog } from "./log.js"
 import type { EpisodeRequest } from "./request.js"
-import { downloadFilename } from "./storage.js"
+import { downloadFilename, FAILED_SCRIPTS_DIR } from "./storage.js"
 import type { EpisodeStore } from "./storage.js"
 
 /** Called by the script step at the boundaries between planner, writer and validator, which it cannot see from outside. */
@@ -34,7 +35,8 @@ export interface PipelineDeps {
   news: { fetchCandidateArticles(options: FetchNewsOptions): Promise<NewsResponse> }
   rank(input: RankStoriesInput): Promise<RankingResponse>
   research(articles: Article[]): Promise<ResearchResponse>
-  script(input: EpisodeInput, progress: ScriptProgress): Promise<ScriptResponse>
+  /** Plans, writes and validates. With `retry`, it skips planning and writes again on that plan (see ScriptRetry). */
+  script(input: EpisodeInput, progress: ScriptProgress, retry?: ScriptRetry): Promise<ScriptResponse>
   voice(script: string): Promise<{ audio: Uint8Array; durationMs: number }>
   store: EpisodeStore
   onProgress?: (event: ProgressEvent) => void
@@ -47,6 +49,8 @@ const AUDIO_BITRATE_BPS = Number(/_(\d+)$/.exec(OUTPUT_FORMAT)?.[1] ?? 128) * 10
 // The planner is an LLM whose plan is checked strictly (for example every connection must rest on selected evidence), so a
 // plan can be rejected for a reason a second attempt does not repeat. Planning is a small, cheap call: try again.
 const MAX_PLANNING_ATTEMPTS = 3
+// The writer is an LLM too, and a script with blocking validation issues can come out clean the second time. Never a third.
+const MAX_SCRIPT_ATTEMPTS = 2
 const MAX_SOURCES = 8
 const MAX_SUMMARY_CHARS = 160
 // At least one researched story is what /api/generate-script needs; fewer stories simply make a shorter episode.
@@ -64,11 +68,21 @@ function describeCause(error: unknown): string {
   return error instanceof Error ? error.name : "unknown error"
 }
 
+const MAX_LOGGED_ISSUE_CHARS = 300
+
+/** One validation issue as a log line: where it came from, what kind it is, and the script text it is about. */
+function describeIssue({ source, type, message, segmentIndex, excerpt }: ValidationIssue): string {
+  const shorten = (text: string) => (text.length > MAX_LOGGED_ISSUE_CHARS ? `${text.slice(0, MAX_LOGGED_ISSUE_CHARS - 1)}…` : text)
+  const where = segmentIndex === undefined ? "" : ` (segment ${segmentIndex})`
+  return `[${source}] ${type}${where}: ${shorten(message)}${excerpt ? ` — "${shorten(excerpt)}"` : ""}`
+}
+
 /**
  * interests + language + duration + tone
  *   -> news -> ranking -> research -> plan + write + validate -> ElevenLabs -> stored MP3.
- * Voicing happens only for a script that passed validation, including the AI evidence review. Any failure is
- * reported as the stage that failed (EpisodeGenerationError), never repaired or retried here.
+ * Voicing happens only for a script that passed validation, including the AI evidence review. A script with blocking
+ * validation issues is written once more (at most MAX_SCRIPT_ATTEMPTS writing attempts, each followed by one validation,
+ * on the same plan). Any failure is reported as the stage that failed (EpisodeGenerationError), never repaired here.
  */
 export async function generateFullEpisode(request: EpisodeRequest, deps: PipelineDeps): Promise<EpisodeResult> {
   const { news, rank, research, script, voice, store, onProgress, signal, log = episodeLog, clock = () => performance.now() } = deps
@@ -155,42 +169,87 @@ export async function generateFullEpisode(request: EpisodeRequest, deps: Pipelin
     throw new EpisodeGenerationError("script")
   }
   emit("planning", "started")
+  // Shared by both attempts. `emit` ignores a stage event it has already sent, so the second attempt adds nothing to the stream.
+  const progress: ScriptProgress = {
+    planned: () => {
+      emit("planning", "done")
+      emit("writing", "started")
+    },
+    written: () => {
+      emit("writing", "done")
+      emit("checking", "started")
+    },
+  }
+  // A script that passed every check but never got its AI evidence review has not been validated reliably either.
+  const isAccepted = ({ validation }: ScriptResponse) => validation.passed && validation.stats.aiReview !== "unavailable"
+
+  const logAttempt = (attempt: number, { validation }: ScriptResponse) => {
+    const { passed, stats } = validation
+    log(
+      `Script attempt ${attempt} of ${MAX_SCRIPT_ATTEMPTS}: validation ${passed ? "PASSED" : "FAILED"} (${stats.errors} errors, ${stats.warnings} warnings, AI review ${stats.aiReview}, ${stats.wordCount} words, max ${stats.maxWords})`,
+    )
+    // The counts alone do not say why a script was refused. Only the blocking issues are listed, and they carry no keys.
+    for (const issue of validation.issues.filter(({ severity }) => severity === "error")) log(`  ${describeIssue(issue)}`)
+  }
+  /** Debug artifact only: it must never turn a failed script into a different failure, so a write error is just logged. */
+  const keepFailedAttempt = async (attempt: number, failed: ScriptResponse, feedback: readonly ValidationIssue[]) => {
+    try {
+      const name = await store.saveFailedScript({ attempt, maxAttempts: MAX_SCRIPT_ATTEMPTS, feedback, script: failed })
+      log(`Script attempt ${attempt} saved for inspection as ${FAILED_SCRIPTS_DIR}/${name}`)
+    } catch (error) {
+      log(`Could not save script attempt ${attempt} for inspection (${describeCause(error)})`)
+    }
+  }
+
   const scripted = await stage("script", () =>
     timed(async () => {
-      for (let attempt = 1; ; attempt++) {
-        let planAccepted = false
-        try {
-          return await script(scriptRequest.request, {
-            planned: () => {
-              planAccepted = true
-              emit("planning", "done")
-              emit("writing", "started")
-            },
-            written: () => {
-              emit("writing", "done")
-              emit("checking", "started")
-            },
-          })
-        } catch (error) {
-          // Only a failure before the writer started is a planning failure: nothing expensive was spent, so plan again.
-          // Once the writer has begun, a failure is not retried here (it would repeat the writing and the review too).
-          if (planAccepted || attempt >= MAX_PLANNING_ATTEMPTS || signal?.aborted) throw error
-          log(`Planning attempt ${attempt} of ${MAX_PLANNING_ATTEMPTS} failed (${describeCause(error)}); planning again`)
+      log(`Script attempt 1 of ${MAX_SCRIPT_ATTEMPTS}`)
+      const first = await (async () => {
+        for (let attempt = 1; ; attempt++) {
+          let planAccepted = false
+          try {
+            return await script(scriptRequest.request, {
+              planned: () => {
+                planAccepted = true
+                progress.planned()
+              },
+              written: progress.written,
+            })
+          } catch (error) {
+            // Only a failure before the writer started is a planning failure: nothing expensive was spent, so plan again.
+            // Once the writer has begun, a failure is not retried here (it would repeat the writing and the review too).
+            if (planAccepted || attempt >= MAX_PLANNING_ATTEMPTS || signal?.aborted) throw error
+            log(`Planning attempt ${attempt} of ${MAX_PLANNING_ATTEMPTS} failed (${describeCause(error)}); planning again`)
+          }
         }
-      }
+      })()
+      logAttempt(1, first)
+      if (!isAccepted(first)) await keepFailedAttempt(1, first, [])
+      // A script with blocking issues gets one more writing attempt. A script that only lacks its AI review does not: writing
+      // it again would not bring the review back.
+      if (first.validation.passed) return { episodeScript: first, attempts: 1 }
+      if (signal?.aborted) throw new EpisodeGenerationError("cancelled")
+
+      // Same research, same plan and same settings; nothing upstream runs again. The writer is told what was rejected.
+      const feedback = first.validation.issues.filter(({ severity }) => severity === "error")
+      log(`Script attempt 1 failed validation; retrying writer`)
+      log(`Script attempt 2 of ${MAX_SCRIPT_ATTEMPTS}`)
+      const second = await script(scriptRequest.request, progress, { plan: first.plan, issues: feedback })
+      logAttempt(2, second)
+      if (!isAccepted(second)) await keepFailedAttempt(2, second, feedback)
+      return { episodeScript: second, attempts: 2 }
     }),
   )
-  const episodeScript = scripted.value
-  // A script that passed every check but never got its AI evidence review has not been validated reliably either.
+  const { episodeScript, attempts } = scripted.value
   const { validation } = episodeScript
-  if (!validation.passed || validation.stats.aiReview === "unavailable") {
-    log(`Stage "validation": ${validation.stats.errors} errors, AI review ${validation.stats.aiReview}`)
+  if (!isAccepted(episodeScript)) {
+    log(`Stage "validation": the script did not pass validation (${attempts} of ${MAX_SCRIPT_ATTEMPTS} attempts used); nothing is voiced`)
     throw new EpisodeGenerationError("validation")
   }
   emit("planning", "done")
   emit("writing", "done")
   emit("checking", "done")
-  log(`Script: ${episodeScript.stats.wordCount} words, validation passed (${validation.stats.warnings} warnings)`)
+  log(`Script: ${episodeScript.stats.wordCount} words, validation passed on attempt ${attempts} of ${MAX_SCRIPT_ATTEMPTS} (${validation.stats.warnings} warnings)`)
 
   // 5. Voice, then keep the exact MP3 so playback and download both serve it without another ElevenLabs call.
   emit("audio", "started")

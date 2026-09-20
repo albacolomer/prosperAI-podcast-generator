@@ -1,4 +1,5 @@
 import type { GenerationEvent } from "../../src/types/generation.js"
+import { checkElevenLabsConfig } from "../audio/preflight.js"
 import { EpisodeGenerationError } from "./errors.js"
 import { generateFullEpisode } from "./pipeline.js"
 import { parseEpisodeRequest } from "./request.js"
@@ -20,8 +21,9 @@ interface HandlerConfig {
 }
 
 /**
- * POST /api/generate-episode. Body: the user's settings, { interests, language, durationMinutes, tone } (no voice).
- * Runs the whole pipeline on the server and answers with a stream of newline-delimited JSON events: one "progress"
+ * POST /api/generate-episode. Body: the user's settings, { interests, language, tone } (no voice, no duration: episodes are
+ * always EPISODE_DURATION_MINUTES long). The ElevenLabs settings are checked first, so a bad one answers 503 before any
+ * provider is called. Runs the whole pipeline on the server and answers with a stream of newline-delimited JSON events: one "progress"
  * event each time a stage starts or finishes, then exactly one "result" (the stored episode) or "error" (the stage
  * that failed, with a message that is safe to show). The provider keys and the voice never leave the server.
  */
@@ -43,6 +45,13 @@ export async function handleGenerateEpisode(request: Request, { env = process.en
   if (missing.length > 0) {
     console.error(`${missing.join(", ")} not set; the episode endpoint cannot run the pipeline.`)
     return json({ error: "Episode generation is not configured" }, 503)
+  }
+
+  // Before any news, OpenAI or Tavily call: a setting that ElevenLabs is certain to refuse must not cost a whole run.
+  const preflight = checkElevenLabsConfig(env)
+  if (!preflight.ok) {
+    console.error(`[Episode] ElevenLabs preflight failed: ${preflight.message}`)
+    return json({ error: preflight.message }, 503)
   }
 
   const services = createServices(env)
