@@ -60,4 +60,6 @@ export interface ScriptResponse {
   /** The quality gate: deterministic checks plus the AI evidence review. Failure is reported, never repaired. */
   validation: ScriptValidation
   stages: ScriptStages
+  /** The server's signature over `script`, present only when validation passed. POST /api/generate-audio requires it. */
+  audioToken?: string
 }

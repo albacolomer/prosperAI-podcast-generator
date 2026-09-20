@@ -12,6 +12,9 @@ const SERVER_ONLY_ENV = [
   "OPENAI_PLANNER_MODEL",
   "OPENAI_VALIDATOR_MODEL",
   "OPENAI_RESEARCH_MODEL",
+  "ELEVENLABS_API_KEY",
+  "ELEVENLABS_VOICE_ID",
+  "ELEVENLABS_MODEL_ID",
 ]
 
 const routes = [
@@ -19,6 +22,7 @@ const routes = [
   { path: "/api/rank-news", module: "/api/rank-news.ts", method: "POST" },
   { path: "/api/research-news", module: "/api/research-news.ts", method: "POST" },
   { path: "/api/generate-script", module: "/api/generate-script.ts", method: "POST" },
+  { path: "/api/generate-audio", module: "/api/generate-audio.ts", method: "POST" },
 ] as const
 
 /**
@@ -57,7 +61,10 @@ export function devApi(): Plugin {
             }
             const response = await handlers[route.method](new Request(url, init))
             res.statusCode = response.status
-            res.end(await response.text())
+            // JSON by default; the audio endpoint answers with binary audio/mpeg.
+            const contentType = response.headers.get("Content-Type")
+            if (contentType) res.setHeader("Content-Type", contentType)
+            res.end(Buffer.from(await response.arrayBuffer()))
           } catch (error) {
             server.config.logger.error(
               `[dev-api] ${route.path} failed: ${error instanceof Error ? error.message : error}`,

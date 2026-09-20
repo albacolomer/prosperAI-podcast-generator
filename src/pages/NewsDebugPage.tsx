@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { AudioDebug } from "@/components/news-debug/AudioDebug"
 import { NewsDebugArticle } from "@/components/news-debug/NewsDebugArticle"
 import { NewsDebugSummary } from "@/components/news-debug/NewsDebugSummary"
 import { RankingDebug } from "@/components/news-debug/RankingDebug"
@@ -302,6 +303,8 @@ function ScriptSection({ ranking, research }: { ranking: RankingSuccess; researc
         </Alert>
       ) : null}
 
+      {/* Keyed on the script so a new script discards the previous audio. */}
+      {state.status === "success" ? <AudioDebug key={state.durationMs} data={state.data} language={state.request.language} /> : null}
       {state.status === "success" ? <ScriptDebug state={state} /> : null}
     </section>
   )

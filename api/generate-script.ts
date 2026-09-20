@@ -1,3 +1,4 @@
+import { signValidatedScript } from "../server/audio/token.js"
 import { generateEpisode } from "../server/script/episode.js"
 import { ScriptError, statusForScriptError } from "../server/script/errors.js"
 import {
@@ -56,7 +57,9 @@ export async function POST(request: Request): Promise<Response> {
       writer: { model: createOpenAiScriptModel({ apiKey, modelName: scriptModel }), modelName: scriptModel },
       reviewer: { model: createOpenAiReviewModel({ apiKey, modelName: reviewModel }), modelName: reviewModel },
     })
-    return json(result)
+    // Only a script that passed validation gets the signature the audio endpoint requires.
+    if (!result.validation.passed) return json(result)
+    return json({ ...result, audioToken: signValidatedScript({ script: result.script, language: parsed.request.language }, apiKey) })
   } catch (error) {
     if (error instanceof ScriptError) {
       console.error(`[Script] ${error.kind}: ${error.message}`)

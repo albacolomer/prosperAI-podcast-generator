@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { POST } from "../../api/generate-script.js"
 import type { ScriptResponse } from "../../src/types/script.js"
+import { signValidatedScript } from "../audio/token.js"
 import { ScriptError } from "./errors.js"
 import { enrichedStory, modelPlanOf } from "./fixtures.js"
 import type { PlannerModel } from "./planner.js"
@@ -151,6 +152,7 @@ describe("POST /api/generate-script", () => {
     expect(body.plan.stories.map((s) => s.storyId)).toEqual(["a"])
     expect(body.validation.stats).toMatchObject({ targetWords: 750, maxWords: 863, aiReview: "passed" })
     expect(body.stages.planner.model).toBe("gpt-5-mini")
+    expect(body.audioToken).toBe(signValidatedScript({ script: body.script, language: "en" }, "sk-secret-key"))
     expect(createScript).toHaveBeenCalledWith({ apiKey: "sk-secret-key", modelName: "gpt-5-mini" })
   })
 
@@ -164,6 +166,8 @@ describe("POST /api/generate-script", () => {
     const body = (await response.json()) as ScriptResponse
     expect(body.validation.passed).toBe(false)
     expect(body.validation.issues.map((issue) => issue.type)).toContain("missing-hook")
+    // No signature is issued, so the audio endpoint can never voice this script.
+    expect(body.audioToken).toBeUndefined()
   })
 
   it("gives each stage its own model: the writer's setting never changes the planner's or the validator's", async () => {
