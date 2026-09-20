@@ -1,4 +1,4 @@
-import { Calendar, ChevronUp, Clock, Globe, MessageSquareText, Mic, Settings2 } from "lucide-react"
+import { Calendar, ChevronUp, Clock, Globe, MessageSquareText, Settings2 } from "lucide-react"
 import { type ReactNode, useState } from "react"
 import { CustomScheduleFields } from "@/components/settings/CustomScheduleFields"
 import { DeliveryTimePicker } from "@/components/settings/DeliveryTimePicker"
@@ -6,7 +6,6 @@ import { DurationSlider } from "@/components/settings/DurationSlider"
 import { LanguageSelect } from "@/components/settings/LanguageSelect"
 import { ScheduleFrequencySelect } from "@/components/settings/ScheduleFrequencySelect"
 import { ToneSelect } from "@/components/settings/ToneSelect"
-import { VoiceQuickSelect } from "@/components/settings/VoiceQuickSelect"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
@@ -82,14 +81,6 @@ export function SettingsSidebarCard({ hasInterests, settings, updateDraft, isDir
 
           <SettingRow icon={<MessageSquareText className="size-4 text-muted-foreground" />} label="Tone">
             <ToneSelect value={settings.tone} onChange={(tone) => updateDraft({ tone })} disabled={gated} />
-          </SettingRow>
-
-          <SettingRow icon={<Mic className="size-4 text-muted-foreground" />} label="Voice">
-            <VoiceQuickSelect
-              value={settings.voiceId}
-              onChange={(voiceId) => updateDraft({ voiceId })}
-              disabled={gated}
-            />
           </SettingRow>
 
           <SettingRow icon={<Calendar className="size-4 text-muted-foreground" />} label="Schedule">

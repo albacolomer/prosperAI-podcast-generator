@@ -1,4 +1,4 @@
-import { FileText, Link2 } from "lucide-react"
+import { Download, FileText, Link2 } from "lucide-react"
 import { EpisodeThumbnail } from "@/components/episodes/EpisodeThumbnail"
 import { FeedbackButtons } from "@/components/episodes/FeedbackButtons"
 import { AudioScrubber } from "@/components/shared/AudioScrubber"
@@ -45,9 +45,19 @@ export function LastEpisodeCard({ episode, playing, onTogglePlay, feedback, onFe
             playing={playing}
             onTogglePlay={onTogglePlay}
             label={episode.title}
+            audioUrl={episode.audioUrl}
           />
 
           <div className="flex flex-wrap items-center gap-2 pt-1">
+            {episode.downloadUrl ? (
+              <Button asChild size="sm" className="rounded-full">
+                <a href={episode.downloadUrl} download={episode.downloadFilename}>
+                  <Download />
+                  Download MP3
+                </a>
+              </Button>
+            ) : null}
+
             <Popover>
               <PopoverTrigger asChild>
                 <Button type="button" variant="secondary" size="sm" className="rounded-full">

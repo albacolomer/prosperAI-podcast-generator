@@ -1,28 +1,33 @@
-import { useState } from "react"
 import { toast } from "sonner"
 import { LastEpisodeCard } from "@/components/episodes/LastEpisodeCard"
 import { OtherEpisodesSection } from "@/components/episodes/OtherEpisodesSection"
+import { GenerationStatusCard } from "@/components/home/GenerationStatusCard"
 import { GreetingHeader } from "@/components/home/GreetingHeader"
 import { InterestsSidebarCard } from "@/components/home/InterestsSidebarCard"
 import { SettingsSidebarCard } from "@/components/home/SettingsSidebarCard"
 import { useDocumentTitle } from "@/hooks/useDocumentTitle"
 import { useEpisodeFeedback } from "@/hooks/useEpisodeFeedback"
+import { useEpisodeGeneration } from "@/hooks/useEpisodeGeneration"
 import { useEpisodes } from "@/hooks/useEpisodes"
 import { useInterests } from "@/hooks/useInterests"
 import { useMockPlayer } from "@/hooks/useMockPlayer"
 import { usePodcastSettings } from "@/hooks/usePodcastSettings"
-
-const GENERATE_DELAY_MS = 1600
 
 export function HomePage() {
   useDocumentTitle("ProsperPod — Home")
 
   const { interests, addInterest, removeInterest, toggleInterestSelected } = useInterests()
   const { settings, updateDraft, save, isDirty } = usePodcastSettings()
-  const { episodes, generateEpisode } = useEpisodes()
+  const { episodes, addGeneratedEpisode } = useEpisodes()
   const { feedback, setEpisodeFeedback } = useEpisodeFeedback()
   const episodePlayer = useMockPlayer()
-  const [generating, setGenerating] = useState(false)
+  const generation = useEpisodeGeneration({
+    onEpisode: ({ episode }) => {
+      addGeneratedEpisode(episode)
+      toast.success("New episode ready!", { description: episode.title })
+    },
+  })
+  const generating = generation.state.status === "running"
 
   const [latestEpisode, ...restEpisodes] = episodes
   const otherEpisodes = restEpisodes.slice(0, 3)
@@ -40,19 +45,21 @@ export function HomePage() {
   }
 
   function handleGenerate() {
-    if (!hasInterests) return
-    setGenerating(true)
-    toast.loading("Generating your next episode…", { id: "generate-episode" })
-    window.setTimeout(() => {
-      const episode = generateEpisode(selectedInterests, settings)
-      setGenerating(false)
-      toast.success("New episode ready!", { id: "generate-episode", description: episode.title })
-    }, GENERATE_DELAY_MS)
+    if (!hasInterests || generating) return
+    // The user's settings are the whole request: the server runs the pipeline and owns the voice.
+    void generation.start({
+      interests: selectedInterests.map((interest) => interest.label),
+      language: settings.language,
+      durationMinutes: settings.durationMinutes,
+      tone: settings.tone,
+    })
   }
 
   return (
     <div className="flex flex-col gap-8">
       <GreetingHeader onGenerate={handleGenerate} generating={generating} gated={!hasInterests} />
+
+      <GenerationStatusCard state={generation.state} onDismissError={generation.dismissError} />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="flex flex-col gap-8">

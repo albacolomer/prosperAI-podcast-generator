@@ -1,6 +1,9 @@
+import { Download } from "lucide-react"
 import { EpisodeThumbnail } from "@/components/episodes/EpisodeThumbnail"
 import { FeedbackButtons } from "@/components/episodes/FeedbackButtons"
+import { EpisodeAudioElement } from "@/components/shared/EpisodeAudioElement"
 import { PlayButton } from "@/components/shared/PlayButton"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { formatDuration, formatRelativeDate } from "@/lib/format"
 import type { Episode, EpisodeFeedback } from "@/types"
@@ -29,7 +32,16 @@ export function EpisodeListItem({ episode, playing, onTogglePlay, feedback, onFe
           {formatDuration(episode.durationSeconds)}
         </span>
 
+        {episode.audioUrl ? <EpisodeAudioElement src={episode.audioUrl} playing={playing} onStop={onTogglePlay} /> : null}
         <PlayButton playing={playing} onClick={onTogglePlay} label={episode.title} />
+
+        {episode.downloadUrl ? (
+          <Button asChild variant="ghost" size="icon" className="size-9 rounded-full">
+            <a href={episode.downloadUrl} download={episode.downloadFilename} aria-label={`Download ${episode.title} as MP3`}>
+              <Download className="size-4" />
+            </a>
+          </Button>
+        ) : null}
 
         <FeedbackButtons value={feedback} onChange={onFeedback} />
       </CardContent>

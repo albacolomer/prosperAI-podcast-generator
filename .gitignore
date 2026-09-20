@@ -1,3 +1,6 @@
+# Generated episode audio (MP3s the app produces at runtime)
+.generated/
+
 # Logs
 logs
 *.log
