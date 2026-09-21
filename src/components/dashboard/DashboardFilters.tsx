@@ -1,6 +1,7 @@
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import type { DashboardRange } from "@/types"
 
-export type DashboardRange = 30 | 90
+const DASHBOARD_RANGES: DashboardRange[] = [7, 30, 90]
 
 interface DashboardFiltersProps {
   value: DashboardRange
@@ -14,12 +15,16 @@ export function DashboardFilters({ value, onChange }: DashboardFiltersProps) {
       variant="outline"
       size="sm"
       value={String(value)}
+      aria-label="Date range"
       onValueChange={(next) => {
         if (next) onChange(Number(next) as DashboardRange)
       }}
     >
-      <ToggleGroupItem value="30">Last 30 days</ToggleGroupItem>
-      <ToggleGroupItem value="90">Last 90 days</ToggleGroupItem>
+      {DASHBOARD_RANGES.map((days) => (
+        <ToggleGroupItem key={days} value={String(days)}>
+          Last {days} days
+        </ToggleGroupItem>
+      ))}
     </ToggleGroup>
   )
 }

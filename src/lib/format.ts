@@ -31,13 +31,3 @@ export function formatRelativeDate(iso: string): string {
 export function formatCompactNumber(value: number): string {
   return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value)
 }
-
-export function formatKpiValue(value: number, format: "number" | "percent"): string {
-  if (format === "percent") return `${value}%`
-  return formatCompactNumber(value)
-}
-
-export function formatDelta(delta: number): string {
-  const sign = delta > 0 ? "+" : ""
-  return `${sign}${delta}%`
-}
