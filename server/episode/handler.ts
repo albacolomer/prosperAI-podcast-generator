@@ -1,6 +1,8 @@
 import type { GenerationEvent } from "../../src/types/generation.js"
 import { checkElevenLabsConfig } from "../audio/preflight.js"
 import { EpisodeGenerationError } from "./errors.js"
+import { generationLock } from "./generationLock.js"
+import type { GenerationLock } from "./generationLock.js"
 import { generateFullEpisode } from "./pipeline.js"
 import { parseEpisodeRequest } from "./request.js"
 import { createPipelineServices, missingEnv } from "./services.js"
@@ -18,6 +20,8 @@ interface HandlerConfig {
   env?: NodeJS.ProcessEnv
   /** Injectable so tests run the real handler with stub services. */
   createServices?: (env: NodeJS.ProcessEnv) => PipelineServices
+  /** Shared with the scheduler, so only one episode is generated at a time. Injectable so tests do not share it. */
+  lock?: GenerationLock
 }
 
 /**
@@ -26,8 +30,9 @@ interface HandlerConfig {
  * provider is called. Runs the whole pipeline on the server and answers with a stream of newline-delimited JSON events: one "progress"
  * event each time a stage starts or finishes, then exactly one "result" (the stored episode) or "error" (the stage
  * that failed, with a message that is safe to show). The provider keys and the voice never leave the server.
+ * Only one episode is generated at a time, whether it was asked for here or by the schedule: while another is running this answers 409.
  */
-export async function handleGenerateEpisode(request: Request, { env = process.env, createServices = createPipelineServices }: HandlerConfig = {}): Promise<Response> {
+export async function handleGenerateEpisode(request: Request, { env = process.env, createServices = createPipelineServices, lock = generationLock }: HandlerConfig = {}): Promise<Response> {
   const text = await request.text()
   if (text.length > MAX_BODY_CHARS) return json({ error: "Request body is too large" }, 413)
 
@@ -54,7 +59,18 @@ export async function handleGenerateEpisode(request: Request, { env = process.en
     return json({ error: preflight.message }, 503)
   }
 
-  const services = createServices(env)
+  // Taken last, after every check that can refuse the request, and released only when the pipeline has actually stopped
+  // (a client that leaves does not stop a stage that is already running, and that stage is still spending).
+  const release = lock.tryAcquire("manual")
+  if (!release) return json({ error: "An episode is already being generated. Please wait for it to finish." }, 409)
+
+  let services: PipelineServices
+  try {
+    services = createServices(env)
+  } catch (error) {
+    release()
+    throw error
+  }
   const cancel = new AbortController()
   request.signal.addEventListener("abort", () => cancel.abort(), { once: true })
   const encoder = new TextEncoder()
@@ -86,6 +102,7 @@ export async function handleGenerateEpisode(request: Request, { env = process.en
           send({ type: "error", message: "Unexpected error while generating the episode" })
         }
       } finally {
+        release()
         clearInterval(heartbeat)
         try {
           controller.close()

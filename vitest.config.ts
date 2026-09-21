@@ -6,7 +6,7 @@ export default defineConfig({
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   test: {
     environment: "node",
-    // The client's pure logic (src/lib) is tested too; components and hooks are not.
-    include: ["server/**/*.test.ts", "src/lib/**/*.test.ts"],
+    // The client's pure logic (src/lib) is tested too, and the schedule components are rendered to static markup (no DOM needed); hooks are not.
+    include: ["server/**/*.test.ts", "src/lib/**/*.test.ts", "src/components/**/*.test.tsx"],
   },
 })

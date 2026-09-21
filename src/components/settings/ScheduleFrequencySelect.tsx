@@ -3,9 +3,8 @@ import type { ScheduleFrequency } from "@/types"
 
 const frequencyOptions: { value: ScheduleFrequency; label: string }[] = [
   { value: "daily", label: "Daily" },
-  { value: "weekdays", label: "Weekdays" },
   { value: "weekly", label: "Weekly" },
-  { value: "custom", label: "Custom" },
+  { value: "monthly", label: "Monthly" },
 ]
 
 interface ScheduleFrequencySelectProps {

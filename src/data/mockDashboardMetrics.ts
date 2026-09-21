@@ -95,10 +95,9 @@ const languageDistribution: NamedSeriesPoint[] = [
 ]
 
 const scheduleFrequencyDistribution: NamedSeriesPoint[] = [
-  { name: "Daily", value: 58 },
-  { name: "Weekdays", value: 24 },
-  { name: "Weekly", value: 13 },
-  { name: "Custom", value: 5 },
+  { name: "Daily", value: 64 },
+  { name: "Weekly", value: 28 },
+  { name: "Monthly", value: 8 },
 ]
 
 const retentionByWeek: RetentionPoint[] = [

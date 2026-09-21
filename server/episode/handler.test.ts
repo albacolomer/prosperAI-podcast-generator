@@ -3,6 +3,7 @@ import { POST } from "../../api/generate-episode.js"
 import type { GenerationEvent } from "../../src/types/generation.js"
 import type { Article } from "../../src/types/article.js"
 import { enrichedStory } from "../script/fixtures.js"
+import { createGenerationLock } from "./generationLock.js"
 import { handleGenerateEpisode } from "./handler.js"
 import type { PipelineDeps } from "./pipeline.js"
 import { createPipelineServices } from "./services.js"
@@ -221,5 +222,76 @@ describe("the voice step of the real services", () => {
     const services = createPipelineServices({ ...ENV, ELEVENLABS_VOICE_ID: undefined })
     await expect(services.voice("Hook.")).rejects.toThrow(/voice/i)
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe("one episode at a time", () => {
+  beforeEach(() => {
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    vi.spyOn(console, "log").mockImplementation(() => {})
+  })
+  afterEach(() => vi.restoreAllMocks())
+
+  const withLock = (lock: ReturnType<typeof createGenerationLock>, deps: PipelineDeps = happyDeps()) => {
+    const { onProgress: _p, signal: _s, log: _l, clock: _c, ...services } = deps
+    const createServices = vi.fn(() => services)
+    return { deps, createServices, call: () => handleGenerateEpisode(post(request), { env: ENV, createServices, lock }) }
+  }
+
+  it("answers 409 without touching any provider while a scheduled episode is being generated", async () => {
+    const lock = createGenerationLock()
+    lock.tryAcquire("scheduled")
+    const { deps, createServices, call } = withLock(lock)
+
+    const response = await call()
+
+    expect(response.status).toBe(409)
+    expect(((await response.json()) as { error: string }).error).toMatch(/already being generated/i)
+    expect(createServices).not.toHaveBeenCalled()
+    expect(deps.news.fetchCandidateArticles).not.toHaveBeenCalled()
+  })
+
+  it("answers 409 to a second manual request while the first is still running", async () => {
+    const lock = createGenerationLock()
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const slow = happyDeps({ voice: vi.fn(async () => (await gate, { audio: MP3, durationMs: 5 })) })
+    const first = await withLock(lock, slow).call()
+    const reading = events(first)
+    await vi.waitFor(() => expect(slow.voice).toHaveBeenCalled())
+
+    expect((await withLock(lock).call()).status).toBe(409)
+    release()
+    expect((await reading).at(-1)?.type).toBe("result")
+  })
+
+  it("takes the lock for the run and gives it back when the episode is done", async () => {
+    const lock = createGenerationLock()
+
+    const response = await withLock(lock).call()
+    expect(lock.owner()).toBe("manual")
+    await events(response)
+
+    expect(lock.owner()).toBeUndefined()
+    expect((await withLock(lock).call()).status).toBe(200)
+  })
+
+  it("gives the lock back when the pipeline fails", async () => {
+    const lock = createGenerationLock()
+    const failing = happyDeps({ rank: vi.fn(async () => Promise.reject(new Error("boom"))) })
+
+    const stream = await events(await withLock(lock, failing).call())
+
+    expect(stream.at(-1)?.type).toBe("error")
+    expect(lock.owner()).toBeUndefined()
+  })
+
+  it("does not take the lock for a request that is refused before it starts", async () => {
+    const lock = createGenerationLock()
+
+    const response = await handleGenerateEpisode(post({ interests: [] }), { env: ENV, lock })
+
+    expect(response.status).toBe(400)
+    expect(lock.owner()).toBeUndefined()
   })
 })

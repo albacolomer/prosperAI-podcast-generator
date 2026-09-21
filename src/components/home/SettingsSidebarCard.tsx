@@ -1,16 +1,14 @@
 import { Calendar, ChevronUp, Clock, Globe, MessageSquareText, Settings2 } from "lucide-react"
 import { type ReactNode, useState } from "react"
-import { CustomScheduleFields } from "@/components/settings/CustomScheduleFields"
-import { DeliveryTimePicker } from "@/components/settings/DeliveryTimePicker"
 import { LanguageSelect } from "@/components/settings/LanguageSelect"
-import { ScheduleFrequencySelect } from "@/components/settings/ScheduleFrequencySelect"
+import { ScheduleFields } from "@/components/settings/ScheduleFields"
 import { ToneSelect } from "@/components/settings/ToneSelect"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { formatDuration } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { EPISODE_DURATION_MINUTES } from "@/types"
-import type { DayOfWeek, PodcastSettings } from "@/types"
+import type { PodcastSettings, ScheduleStatus } from "@/types"
 
 interface SettingsSidebarCardProps {
   hasInterests: boolean
@@ -18,6 +16,8 @@ interface SettingsSidebarCardProps {
   updateDraft: (partial: Partial<PodcastSettings>) => void
   isDirty: boolean
   onSave: () => void
+  /** The schedule as the server holds it; `null` until it has answered. */
+  scheduleStatus: ScheduleStatus | null
 }
 
 interface SettingRowProps {
@@ -38,12 +38,14 @@ function SettingRow({ icon, label, children }: SettingRowProps) {
   )
 }
 
-export function SettingsSidebarCard({ hasInterests, settings, updateDraft, isDirty, onSave }: SettingsSidebarCardProps) {
+export function SettingsSidebarCard({ hasInterests, settings, updateDraft, isDirty, onSave, scheduleStatus }: SettingsSidebarCardProps) {
   const [expanded, setExpanded] = useState(true)
   const gated = !hasInterests
+  // Without interests the only change worth saving is switching the schedule off; everything else is gated.
+  const saveBlocked = gated && settings.scheduleEnabled
 
   const saveButton = (
-    <Button type="button" onClick={onSave} disabled={gated || !isDirty} className="w-full rounded-full">
+    <Button type="button" onClick={onSave} disabled={saveBlocked || !isDirty} className="w-full rounded-full">
       Save changes
     </Button>
   )
@@ -86,36 +88,10 @@ export function SettingsSidebarCard({ hasInterests, settings, updateDraft, isDir
           </SettingRow>
 
           <SettingRow icon={<Calendar className="size-4 text-muted-foreground" />} label="Schedule">
-            <div className="flex flex-col gap-3">
-              <div className="grid grid-cols-2 gap-2">
-                <div className="flex flex-col gap-1">
-                  <span className="text-xs text-muted-foreground">Frequency</span>
-                  <ScheduleFrequencySelect
-                    value={settings.frequency}
-                    onChange={(frequency) => updateDraft({ frequency })}
-                    disabled={gated}
-                  />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <span className="text-xs text-muted-foreground">Delivery time</span>
-                  <DeliveryTimePicker
-                    value={settings.deliveryTime}
-                    onChange={(deliveryTime) => updateDraft({ deliveryTime })}
-                    disabled={gated}
-                  />
-                </div>
-              </div>
-              {settings.frequency === "custom" ? (
-                <CustomScheduleFields
-                  value={settings.customDays}
-                  onChange={(customDays: DayOfWeek[]) => updateDraft({ customDays })}
-                  disabled={gated}
-                />
-              ) : null}
-            </div>
+            <ScheduleFields settings={settings} updateDraft={updateDraft} disabled={gated} hasInterests={hasInterests} status={scheduleStatus} />
           </SettingRow>
 
-          {gated ? (
+          {saveBlocked ? (
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="inline-flex w-full">{saveButton}</span>

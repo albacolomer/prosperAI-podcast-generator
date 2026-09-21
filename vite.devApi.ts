@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { parseEnv } from "node:util"
-import type { Plugin } from "vite"
+import type { Plugin, ViteDevServer } from "vite"
 
 type ApiHandler = (request: Request) => Promise<Response>
 
@@ -21,15 +21,102 @@ const SERVER_ONLY_ENV = [
 ]
 
 const routes = [
-  { path: "/api/news", module: "/api/news.ts", method: "GET" },
-  { path: "/api/rank-news", module: "/api/rank-news.ts", method: "POST" },
-  { path: "/api/research-news", module: "/api/research-news.ts", method: "POST" },
-  { path: "/api/generate-script", module: "/api/generate-script.ts", method: "POST" },
-  { path: "/api/generate-audio", module: "/api/generate-audio.ts", method: "POST" },
-  { path: "/api/generate-episode", module: "/api/generate-episode.ts", method: "POST" },
-  { path: "/api/episode-audio", module: "/api/episode-audio.ts", method: "GET" },
-  { path: "/api/episodes", module: "/api/episodes.ts", method: "GET" },
+  { path: "/api/news", module: "/api/news.ts", methods: ["GET"] },
+  { path: "/api/rank-news", module: "/api/rank-news.ts", methods: ["POST"] },
+  { path: "/api/research-news", module: "/api/research-news.ts", methods: ["POST"] },
+  { path: "/api/generate-script", module: "/api/generate-script.ts", methods: ["POST"] },
+  { path: "/api/generate-audio", module: "/api/generate-audio.ts", methods: ["POST"] },
+  { path: "/api/generate-episode", module: "/api/generate-episode.ts", methods: ["POST"] },
+  { path: "/api/episode-audio", module: "/api/episode-audio.ts", methods: ["GET"] },
+  { path: "/api/episodes", module: "/api/episodes.ts", methods: ["GET"] },
+  { path: "/api/schedule", module: "/api/schedule.ts", methods: ["GET", "PUT"] },
+  // Development and testing only: reopens a delivery slot that failed before any provider was called. Never called by the app.
+  { path: "/api/reopen-schedule-slot", module: "/api/reopen-schedule-slot.ts", methods: ["POST"] },
 ] as const
+
+// How often the scheduler looks at the saved schedule. A slot's generation starts within one interval of its start time.
+const SCHEDULER_TICK_MS = 30_000
+const SCHEDULER_FIRST_TICK_MS = 5_000
+
+interface SchedulerHost {
+  timer?: ReturnType<typeof setInterval>
+  first?: ReturnType<typeof setTimeout>
+  ticking?: boolean
+  /** Other scheduler processes already warned about, so each is mentioned once. */
+  warned?: Set<number>
+}
+
+interface InstancesModule {
+  beatInstance(port?: number): Promise<void>
+  forgetInstance(): Promise<void>
+  otherInstances(): Promise<{ pid: number; port?: number }[]>
+}
+
+/**
+ * The scheduler's host. There is one per process, kept on globalThis: Vite restarts its server in this same process when
+ * .env.local or the config changes, and a timer left behind by the old server would run next to the new one's.
+ */
+function startScheduler(server: ViteDevServer): void {
+  const host = ((globalThis as { __prosperpodScheduler?: SchedulerHost }).__prosperpodScheduler ??= {})
+  clearInterval(host.timer)
+  clearTimeout(host.first)
+  host.warned ??= new Set()
+
+  /**
+   * Development only: says so when another dev server is running a scheduler against this same project. Two of them do no
+   * harm (a slot is claimed by one process, whichever gets there first), but they are almost always an oversight.
+   */
+  const checkForOtherSchedulers = async () => {
+    try {
+      const instances = (await server.ssrLoadModule("/server/schedule/instances.ts")) as InstancesModule
+      const address = server.httpServer?.address()
+      await instances.beatInstance(typeof address === "object" && address ? address.port : undefined)
+      for (const other of await instances.otherInstances()) {
+        if (host.warned?.has(other.pid)) continue
+        host.warned?.add(other.pid)
+        server.config.logger.warn(
+          `[scheduler] Another dev server is also running the scheduler on this project (pid ${other.pid}${other.port ? `, port ${other.port}` : ""}). ` +
+            `Each scheduled episode is still generated only once (the slot is claimed by whichever process gets there first), ` +
+            `but stop the extra server to avoid surprises.`,
+        )
+      }
+    } catch (error) {
+      server.config.logger.error(`[scheduler] could not check for other schedulers: ${error instanceof Error ? error.message : error}`)
+    }
+  }
+
+  const tick = async () => {
+    // A run takes minutes; the next timer beat must not start another (the generation lock would refuse it anyway).
+    if (host.ticking) return
+    host.ticking = true
+    try {
+      // Loaded through Vite so edits to server/schedule are picked up without a restart. It keeps no state of its own.
+      const { runScheduleTick } = (await server.ssrLoadModule("/server/schedule/runner.ts")) as {
+        runScheduleTick: () => Promise<unknown>
+      }
+      await runScheduleTick()
+    } catch (error) {
+      server.config.logger.error(`[scheduler] tick failed: ${error instanceof Error ? error.message : error}`)
+    } finally {
+      host.ticking = false
+    }
+  }
+
+  void checkForOtherSchedulers()
+  host.first = setTimeout(() => void tick(), SCHEDULER_FIRST_TICK_MS)
+  host.timer = setInterval(() => {
+    void checkForOtherSchedulers()
+    void tick()
+  }, SCHEDULER_TICK_MS)
+  server.httpServer?.once("close", () => {
+    clearInterval(host.timer)
+    clearTimeout(host.first)
+    void server
+      .ssrLoadModule("/server/schedule/instances.ts")
+      .then((module) => (module as InstancesModule).forgetInstance())
+      .catch(() => undefined)
+  })
+}
 
 /**
  * Dev-only stand-in for Vercel: serves the api/ routes from `npm run dev` by running the
@@ -67,10 +154,13 @@ export function devApi(): Plugin {
         }
       }
 
+      startScheduler(server)
+
       for (const route of routes) {
         server.middlewares.use(route.path, async (req, res) => {
           res.setHeader("Content-Type", "application/json")
-          if (req.method !== route.method) {
+          const method = req.method ?? ""
+          if (!(route.methods as readonly string[]).includes(method)) {
             res.statusCode = 405
             res.end(JSON.stringify({ error: "Method not allowed" }))
             return
@@ -85,15 +175,15 @@ export function devApi(): Plugin {
             res.on("close", () => {
               if (!res.writableEnded) abort.abort()
             })
-            const init: RequestInit = { method: route.method, signal: abort.signal }
+            const init: RequestInit = { method, signal: abort.signal }
             const range = req.headers.range
             if (range) init.headers = { Range: range }
-            if (route.method === "POST") {
+            if (method === "POST" || method === "PUT") {
               const chunks: Buffer[] = []
               for await (const chunk of req) chunks.push(chunk as Buffer)
               init.body = Buffer.concat(chunks)
             }
-            const response = await handlers[route.method](new Request(url, init))
+            const response = await handlers[method](new Request(url, init))
             res.statusCode = response.status
             // JSON by default; the handlers also answer with binary audio/mpeg (Range and attachment headers included).
             response.headers.forEach((value, name) => res.setHeader(name, value))
