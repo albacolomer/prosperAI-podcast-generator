@@ -17,12 +17,17 @@ export interface GeneratedEpisode {
   topics: string[]
   sources: { name: string; url?: string }[]
   durationSeconds: number
+  /** When the podcast was generated (ISO 8601). The list of podcasts is in this order. */
+  publishedAt: string
   /** Streams the stored MP3 for playback. */
   audioUrl: string
   /** The same stored MP3 as an attachment named prosperpod-<title>.mp3. Serving it never calls ElevenLabs. */
   downloadUrl: string
   downloadFilename: string
 }
+
+/** A podcast as GET /api/episodes lists it. `recovered`: its details file was missing, so the title and date were rebuilt from the audio file. */
+export type StoredPodcast = GeneratedEpisode & { recovered?: true }
 
 export interface EpisodeRunStats {
   newsCandidates: number

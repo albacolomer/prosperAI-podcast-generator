@@ -8,7 +8,5 @@ export interface NavItem {
 
 export const navItems: NavItem[] = [
   { to: ROUTES.home, label: "Home" },
-  { to: ROUTES.episodes, label: "Episodes" },
   { to: ROUTES.dashboard, label: "Dashboard", badge: "Internal" },
-  { to: ROUTES.newsDebug, label: "News Debug", badge: "Dev" },
 ]

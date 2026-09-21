@@ -5,7 +5,6 @@ import type { EnrichedStory, ResearchResponse } from "../../src/types/research.j
 import type { ScriptResponse } from "../../src/types/script.js"
 import type { ValidationIssue } from "../../src/types/validation.js"
 import { storiesForDuration } from "../../src/lib/storyBudget.js"
-import { OUTPUT_FORMAT } from "../audio/elevenlabs.js"
 import type { NewsLogger } from "../news/log.js"
 import type { FetchNewsOptions } from "../news/service.js"
 import type { RankStoriesInput } from "../ranking/ranker.js"
@@ -15,9 +14,10 @@ import type { EpisodeInput, ScriptRetry } from "../script/episode.js"
 import { parseScriptRequest } from "../script/request.js"
 import { EpisodeGenerationError } from "./errors.js"
 import { episodeLog } from "./log.js"
+import { mp3DurationSeconds } from "./mp3.js"
 import type { EpisodeRequest } from "./request.js"
-import { downloadFilename, FAILED_SCRIPTS_DIR } from "./storage.js"
-import type { EpisodeStore } from "./storage.js"
+import { episodeLinks, FAILED_SCRIPTS_DIR } from "./storage.js"
+import type { EpisodeStore, StoredEpisode } from "./storage.js"
 
 /** Called by the script step at the boundaries between planner, writer and validator, which it cannot see from outside. */
 export interface ScriptProgress {
@@ -45,7 +45,6 @@ export interface PipelineDeps {
   clock?: () => number
 }
 
-const AUDIO_BITRATE_BPS = Number(/_(\d+)$/.exec(OUTPUT_FORMAT)?.[1] ?? 128) * 1000
 // The planner is an LLM whose plan is checked strictly (for example every connection must rest on selected evidence), so a
 // plan can be rejected for a reason a second attempt does not repeat. Planning is a small, cheap call: try again.
 const MAX_PLANNING_ATTEMPTS = 3
@@ -56,10 +55,7 @@ const MAX_SUMMARY_CHARS = 160
 // At least one researched story is what /api/generate-script needs; fewer stories simply make a shorter episode.
 const MIN_ENRICHED_STORIES = 1
 
-/** The MP3 is constant-bitrate (OUTPUT_FORMAT), so its length follows from its size. The player replaces this with the decoded length. */
-export function mp3DurationSeconds(bytes: number): number {
-  return Math.round((bytes * 8) / AUDIO_BITRATE_BPS)
-}
+export { mp3DurationSeconds }
 
 /** Stage errors carry safe messages by design; anything else logs its class name only, never its message. */
 function describeCause(error: unknown): string {
@@ -271,20 +267,27 @@ export async function generateFullEpisode(request: EpisodeRequest, deps: Pipelin
   const description = `In this episode: ${coveredStories.map((story) => story.headline).join("; ")}.`
   const summary = description.length > MAX_SUMMARY_CHARS ? `${description.slice(0, MAX_SUMMARY_CHARS - 1).trimEnd()}…` : description
 
+  const stored: StoredEpisode = {
+    id,
+    title: episodeScript.title,
+    summary,
+    description,
+    topics: interests,
+    sources: [...sources.values()].slice(0, MAX_SOURCES),
+    durationSeconds: mp3DurationSeconds(voiced.value.audio.length),
+    publishedAt: new Date().toISOString(),
+  }
+  // The MP3 is already safe; this record is what lets the podcast list survive a new browser or a cleared cache, so a failure
+  // to write it is logged but does not take the finished podcast away from the listener (the browser keeps its own copy too).
+  try {
+    await store.saveEpisode(stored)
+  } catch (error) {
+    log(`Could not save the podcast's details next to its audio (${describeCause(error)}); it will not be listed after a reload`)
+  }
+
   const totalMs = clock() - startedAt
   return {
-    episode: {
-      id,
-      title: episodeScript.title,
-      summary,
-      description,
-      topics: interests,
-      sources: [...sources.values()].slice(0, MAX_SOURCES),
-      durationSeconds: mp3DurationSeconds(voiced.value.audio.length),
-      audioUrl: `/api/episode-audio?id=${id}`,
-      downloadUrl: `/api/episode-audio?id=${id}&download=1`,
-      downloadFilename: downloadFilename(id),
-    },
+    episode: { ...stored, ...episodeLinks(id) },
     stats: {
       newsCandidates: candidates.length,
       rankedStories: rankedArticles.length,

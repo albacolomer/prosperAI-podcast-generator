@@ -5,7 +5,7 @@ import type { ScriptValidation } from "../../src/types/validation.js"
 import { enrichedStory, planOf, segment } from "../script/fixtures.js"
 import type { PipelineDeps } from "./pipeline.js"
 import type { EpisodeRequest } from "./request.js"
-import type { EpisodeStore, FailedScriptRecord } from "./storage.js"
+import type { EpisodeStore, FailedScriptRecord, StoredEpisode } from "./storage.js"
 
 export const MP3 = new Uint8Array([0x49, 0x44, 0x33, 0x04, 0x00, 0xff, 0xfb, 0x90, 0x00])
 
@@ -55,12 +55,18 @@ export function scriptResponse(storyIds: string[], overrides: Partial<ScriptResp
   }
 }
 
-export const memoryStore = (): EpisodeStore & { saved: { audio: Uint8Array; title: string }[]; failedScripts: FailedScriptRecord[] } => {
+export const memoryStore = (): EpisodeStore & { saved: { audio: Uint8Array; title: string }[]; failedScripts: FailedScriptRecord[]; details: StoredEpisode[] } => {
   const saved: { audio: Uint8Array; title: string }[] = []
   const failedScripts: FailedScriptRecord[] = []
+  const details: StoredEpisode[] = []
   return {
     saved,
     failedScripts,
+    details,
+    saveEpisode: vi.fn(async (episode) => {
+      details.push(episode)
+    }),
+    list: vi.fn(async () => [...details].reverse()),
     saveFailedScript: vi.fn(async (record) => {
       failedScripts.push(record)
       return `failed-${failedScripts.length}.json`

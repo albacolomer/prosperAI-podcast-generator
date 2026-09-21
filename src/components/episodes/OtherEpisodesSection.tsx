@@ -26,7 +26,7 @@ export function OtherEpisodesSection({
   return (
     <section>
       <SectionHeading
-        title="Recent episodes"
+        title="Recent podcasts"
         action={
           <Button asChild variant="link" className="px-0">
             <Link to={ROUTES.episodes}>

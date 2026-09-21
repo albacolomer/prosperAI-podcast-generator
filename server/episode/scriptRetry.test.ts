@@ -283,3 +283,44 @@ describe("the script writing attempts", () => {
     expect(deps.voice).not.toHaveBeenCalled()
   })
 })
+
+describe("keeping the finished podcast", () => {
+  it("saves its details next to the audio, dated when it was generated, and returns the same date", async () => {
+    const before = Date.now()
+    const deps = happyDeps({ script: scripts(accepted()) })
+
+    const { episode } = await generateFullEpisode(request, deps)
+
+    expect(deps.store.saveEpisode).toHaveBeenCalledTimes(1)
+    const [stored] = deps.store.details
+    expect(stored).toMatchObject({
+      id: "ai-chips-race-cars-your-briefing-0a1b2c3d",
+      title: "AI Chips & Race Cars: Your Briefing",
+      summary: "In this episode: Headline a; Headline b.",
+      topics: request.interests,
+    })
+    expect(Date.parse(stored.publishedAt)).toBeGreaterThanOrEqual(before)
+    expect(episode.publishedAt).toBe(stored.publishedAt)
+    expect(stored).not.toHaveProperty("audioUrl")
+  })
+
+  it("still returns the podcast when its details cannot be saved: the audio is already safe", async () => {
+    const log = vi.fn()
+    const deps = happyDeps({ log, script: scripts(accepted()) })
+    deps.store.saveEpisode = vi.fn(async () => Promise.reject(new Error("disk full")))
+
+    const { episode } = await generateFullEpisode(request, deps)
+
+    expect(episode.id).toBe("ai-chips-race-cars-your-briefing-0a1b2c3d")
+    expect(logged(log)).toContain("Could not save the podcast's details")
+  })
+
+  it("saves nothing when the script never passed validation", async () => {
+    const deps = happyDeps({ script: scripts(rejected(outroLink)) })
+
+    await failure(generateFullEpisode(request, deps))
+
+    expect(deps.store.saveEpisode).not.toHaveBeenCalled()
+    expect(deps.store.saved).toEqual([])
+  })
+})

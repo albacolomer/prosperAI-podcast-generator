@@ -1,10 +1,31 @@
-import type { EpisodeResult, FailureStage, GenerationEvent, ProgressEvent, Tone } from "@/types"
+import type { EpisodeResult, FailureStage, GenerationEvent, ProgressEvent, StoredPodcast, Tone } from "@/types"
 
 /** The user's settings, and nothing else: the voice is server configuration and the duration is fixed, so neither is part of the request. */
 export interface GenerateEpisodeParams {
   interests: string[]
   language: string
   tone: Tone
+}
+
+const isStoredPodcast = (value: unknown): value is StoredPodcast => {
+  if (typeof value !== "object" || value === null) return false
+  const podcast = value as Record<string, unknown>
+  return (
+    typeof podcast.id === "string" &&
+    typeof podcast.title === "string" &&
+    typeof podcast.publishedAt === "string" &&
+    typeof podcast.durationSeconds === "number" &&
+    typeof podcast.audioUrl === "string" &&
+    Array.isArray(podcast.topics)
+  )
+}
+
+/** The generated podcasts the server has stored, newest first (GET /api/episodes). Rejects when the list cannot be read. */
+export async function fetchStoredEpisodes(signal?: AbortSignal): Promise<StoredPodcast[]> {
+  const response = await fetch("/api/episodes", { signal })
+  if (!response.ok) throw new Error(`The podcast list request failed (${response.status})`)
+  const body = (await response.json()) as { episodes?: unknown }
+  return Array.isArray(body.episodes) ? body.episodes.filter(isStoredPodcast) : []
 }
 
 /** A failed generation. The message is the server's user-facing one for the stage that failed. */

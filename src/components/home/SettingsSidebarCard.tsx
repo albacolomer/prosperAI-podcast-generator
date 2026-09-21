@@ -57,7 +57,7 @@ export function SettingsSidebarCard({ hasInterests, settings, updateDraft, isDir
       >
         <span className="flex items-center gap-2 font-semibold text-foreground">
           <Settings2 className="size-4" />
-          Project settings
+          Podcast settings
         </span>
         <ChevronUp className={cn("size-4 text-muted-foreground transition-transform", !expanded && "rotate-180")} />
       </button>

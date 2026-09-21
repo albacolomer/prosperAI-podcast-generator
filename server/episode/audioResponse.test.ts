@@ -15,7 +15,7 @@ const get = (query: string, headers: Record<string, string> = {}) =>
   new Request(`http://localhost/api/episode-audio?${query}`, { headers })
 
 describe("serveEpisodeAudio", () => {
-  const store: EpisodeStore = { save: vi.fn(), read: vi.fn(async (id) => (id === ID ? AUDIO : undefined)), saveFailedScript: vi.fn() }
+  const store: EpisodeStore = { save: vi.fn(), read: vi.fn(async (id) => (id === ID ? AUDIO : undefined)), saveFailedScript: vi.fn(), saveEpisode: vi.fn(), list: vi.fn() }
   const fetchMock = vi.fn<typeof fetch>()
 
   beforeEach(() => {

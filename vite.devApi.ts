@@ -28,6 +28,7 @@ const routes = [
   { path: "/api/generate-audio", module: "/api/generate-audio.ts", method: "POST" },
   { path: "/api/generate-episode", module: "/api/generate-episode.ts", method: "POST" },
   { path: "/api/episode-audio", module: "/api/episode-audio.ts", method: "GET" },
+  { path: "/api/episodes", module: "/api/episodes.ts", method: "GET" },
 ] as const
 
 /**

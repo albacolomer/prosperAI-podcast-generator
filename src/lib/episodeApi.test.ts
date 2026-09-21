@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { EpisodeResult, ProgressEvent } from "@/types"
-import { EpisodeGenerationFailure, generateEpisode } from "./episodeApi"
+import { EpisodeGenerationFailure, fetchStoredEpisodes, generateEpisode } from "./episodeApi"
 
 const settings = { interests: ["Artificial Intelligence", "Formula 1"], language: "en", tone: "conversational" as const }
 
@@ -13,6 +13,7 @@ const result: EpisodeResult = {
     topics: settings.interests,
     sources: [{ name: "news.example.com", url: "https://news.example.com/a" }],
     durationSeconds: 538,
+    publishedAt: "2026-09-20T18:59:00.000Z",
     audioUrl: "/api/episode-audio?id=ai-briefing-0a1b2c3d",
     downloadUrl: "/api/episode-audio?id=ai-briefing-0a1b2c3d&download=1",
     downloadFilename: "prosperpod-ai-briefing.mp3",
@@ -130,5 +131,37 @@ describe("generateEpisode", () => {
     expect(error).toBeInstanceOf(EpisodeGenerationFailure)
     expect(error).toMatchObject({ message, stage: undefined })
     expect(onProgress).not.toHaveBeenCalled()
+  })
+})
+
+describe("fetchStoredEpisodes", () => {
+  const fetchMock = vi.fn<typeof fetch>()
+  beforeEach(() => {
+    fetchMock.mockReset()
+    vi.stubGlobal("fetch", fetchMock)
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it("asks the server for its stored podcasts and returns them in the order it sent", async () => {
+    const newer = { ...result.episode, id: "newer", publishedAt: "2026-09-21T10:00:00.000Z" }
+    fetchMock.mockResolvedValue(Response.json({ episodes: [newer, result.episode] }))
+
+    const listed = await fetchStoredEpisodes()
+
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/episodes")
+    expect(listed.map(({ id }) => id)).toEqual(["newer", result.episode.id])
+  })
+
+  it("skips an entry that is not a podcast instead of failing the whole list", async () => {
+    fetchMock.mockResolvedValue(Response.json({ episodes: [result.episode, { id: 7 }, null, "x", { ...result.episode, audioUrl: undefined }] }))
+    expect((await fetchStoredEpisodes()).map(({ id }) => id)).toEqual([result.episode.id])
+  })
+
+  it("returns an empty list for a body without one, and rejects when the request fails", async () => {
+    fetchMock.mockResolvedValue(Response.json({}))
+    expect(await fetchStoredEpisodes()).toEqual([])
+
+    fetchMock.mockResolvedValue(Response.json({ error: "no" }, { status: 500 }))
+    await expect(fetchStoredEpisodes()).rejects.toThrow("(500)")
   })
 })
