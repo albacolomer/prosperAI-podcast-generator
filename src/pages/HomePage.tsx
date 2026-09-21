@@ -30,7 +30,7 @@ export function HomePage() {
   const generation = useEpisodeGeneration({
     onEpisode: ({ episode }) => {
       addGeneratedEpisode(episode)
-      toast.success("New episode ready!", { description: episode.title })
+      toast.success("New podcast ready!", { description: episode.title })
     },
   })
   const generating = generation.state.status === "running"
@@ -109,7 +109,7 @@ export function HomePage() {
   function handleGenerate() {
     if (!hasInterests || generating) return
     if (scheduleStatus?.run?.status === "running") {
-      toast.info("A scheduled episode is being generated right now", { description: "It will appear here as soon as it is ready." })
+      toast.info("A scheduled podcast is being generated right now", { description: "It will appear here as soon as it is ready." })
       return
     }
     // The user's settings are the whole request: the server runs the pipeline and owns the voice and the 10-minute length.
@@ -122,7 +122,7 @@ export function HomePage() {
 
   return (
     <div className="flex flex-col gap-8">
-      <GreetingHeader onGenerate={handleGenerate} generating={generating} gated={!hasInterests} />
+      <GreetingHeader onGenerate={handleGenerate} generating={generating} gated={!hasInterests} scheduleStatus={scheduleStatus} />
 
       <ScheduledRunBanner run={scheduleStatus?.run} configProblem={scheduleStatus?.configured ? scheduleStatus.configProblem : null} />
 
@@ -161,7 +161,6 @@ export function HomePage() {
             updateDraft={updateDraft}
             isDirty={isDirty}
             onSave={() => void handleSave()}
-            scheduleStatus={scheduleStatus}
           />
         </aside>
       </div>

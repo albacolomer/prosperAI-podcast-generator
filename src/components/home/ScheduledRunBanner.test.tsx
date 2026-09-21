@@ -20,40 +20,52 @@ const render = (value: ScheduleRunStatus | null | undefined, configProblem: { me
   renderToStaticMarkup(<ScheduledRunBanner run={value} configProblem={configProblem} now={NOW} />)
 
 const problem = { message: "ELEVENLABS_VOICE_ID is not set on the server.", since: "2026-09-21T09:45:08.000Z" }
+const WAITING = "Working on your new podcast, it will be ready soon."
 
 describe("ScheduledRunBanner", () => {
-  it("shows nothing without a run, or for an episode that arrived on time", () => {
+  it("shows nothing without a run, or for an episode that was ready on time", () => {
     expect(render(null)).toBe("")
     expect(render(undefined)).toBe("")
     expect(render(run())).toBe("")
   })
 
-  it("tells the user a scheduled episode is being generated", () => {
+  it("tells the user a podcast is being generated, in one simple line", () => {
     const html = render(run({ status: "running", finishedAt: undefined }))
 
     expect(html).toContain('data-kind="running"')
-    expect(html).toContain("Generating your scheduled episode")
-    expect(html).toContain("8:00 AM")
+    expect(html).toContain(WAITING)
+    // Nothing about the due time, the attempt or the pipeline.
+    expect(html).not.toMatch(/8:00|due|Trying again|attempt|research|ranking|writing|validat/i)
   })
 
-  it("says it is trying again on the second attempt", () => {
-    expect(render(run({ status: "running", attempts: 2, finishedAt: undefined }))).toContain("Trying again")
+  it("says the same on the second attempt", () => {
+    const html = render(run({ status: "running", attempts: 2, finishedAt: undefined }))
+
+    expect(html).toContain(WAITING)
+    expect(html).not.toContain("Trying again")
+  })
+
+  it("removes the loading message once the podcast has been generated", () => {
+    const running = run({ status: "running", finishedAt: undefined })
+
+    expect(render(running)).toContain(WAITING)
+    // The same slot, now completed: the next poll's render has no message.
+    expect(render({ ...running, status: "completed", finishedAt: "2026-09-21T05:52:00.000Z" })).toBe("")
+  })
+
+  it("does not tell the user a finished podcast arrived late, however late it was", () => {
+    for (const finishedAt of ["2026-09-21T06:12:00.000Z", "2026-09-21T08:30:00.000Z"]) {
+      const html = render(run({ late: true, finishedAt }))
+      expect(html).toBe("")
+    }
   })
 
   it("shows a failure as an alert, with the safe message", () => {
     const html = render(run({ status: "failed", attempts: 2, message: "We couldn't research enough stories to generate this episode.", finishedAt: "2026-09-21T06:05:00.000Z" }))
 
     expect(html).toContain('data-kind="failed"')
-    expect(html).toContain("We couldn&#x27;t generate your scheduled episode")
+    expect(html).toContain("We couldn&#x27;t generate your scheduled podcast")
     expect(html).toContain("We couldn&#x27;t research enough stories to generate this episode. We tried twice.")
-  })
-
-  it("shows a late episode", () => {
-    const html = render(run({ late: true, finishedAt: "2026-09-21T06:12:00.000Z" }))
-
-    expect(html).toContain('data-kind="late"')
-    expect(html).toContain("arrived late")
-    expect(html).toContain("8:12 AM")
   })
 
   it("tells the user a server setting is holding the episode back, naming it, and that it will start by itself", () => {

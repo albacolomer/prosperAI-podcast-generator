@@ -12,8 +12,8 @@ interface ScheduledRunBannerProps {
 }
 
 /**
- * The latest scheduled run, when it is worth interrupting Home for: it is generating now, it failed, or it arrived late.
- * A run that finished on time needs no announcement (the episode itself is the announcement).
+ * The latest scheduled run, when it is worth interrupting Home for: a podcast is being made now, or it failed. A run that
+ * finished needs no announcement, and never a remark about how long it took: the episode itself is the announcement.
  */
 export function ScheduledRunBanner({ run, configProblem, now }: ScheduledRunBannerProps) {
   const problem = describeConfigProblem(configProblem)
@@ -48,7 +48,6 @@ export function ScheduledRunBanner({ run, configProblem, now }: ScheduledRunBann
       <Alert data-testid="scheduled-run-banner" data-kind={notice.kind} role="status">
         {notice.kind === "running" ? <Loader2 className="animate-spin" /> : null}
         <AlertTitle>{notice.title}</AlertTitle>
-        <AlertDescription>{notice.detail}</AlertDescription>
       </Alert>
     </>
   )

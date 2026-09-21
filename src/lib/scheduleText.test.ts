@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { ScheduleRunStatus, ScheduleStatus } from "@/types"
-import { SCHEDULE_NEEDS_INTERESTS, DAY_OF_MONTH_OPTIONS, describeConfigProblem, describeFrequency, describeRun, formatDeliveryIn, formatTimeIn, isBannerWorthy, ordinal, summarizeSchedule } from "./scheduleText"
+import { SCHEDULE_NEEDS_INTERESTS, DAY_OF_MONTH_OPTIONS, describeConfigProblem, describeFrequency, describeRun, formatNextEpisode, formatTimeIn, isBannerWorthy, ordinal, summarizeSchedule } from "./scheduleText"
 
 type Configured = Extract<ScheduleStatus, { configured: true }>
 
@@ -89,7 +89,6 @@ describe("time formatting", () => {
   it("shows the delivery in the schedule's own timezone, not the viewer's", () => {
     expect(formatTimeIn("2026-09-21T06:00:00.000Z", "Europe/Madrid")).toBe("8:00 AM")
     expect(formatTimeIn("2026-09-21T06:00:00.000Z", "Asia/Tokyo")).toBe("3:00 PM")
-    expect(formatDeliveryIn("2026-09-22T06:00:00.000Z", "Europe/Madrid")).toBe("Tue, Sep 22, 8:00 AM")
   })
 
   it("uses ordinary spaces", () => {
@@ -101,24 +100,47 @@ describe("time formatting", () => {
   })
 })
 
+describe("formatNextEpisode", () => {
+  // Monday 21 September 2026, 07:00 in Madrid.
+  const now = Date.parse("2026-09-21T05:00:00.000Z")
+
+  it("says Today and Tomorrow, counting days in the schedule's timezone", () => {
+    expect(formatNextEpisode("2026-09-21T15:00:00.000Z", "Europe/Madrid", now)).toBe("Today, 5:00 PM")
+    expect(formatNextEpisode("2026-09-22T06:00:00.000Z", "Europe/Madrid", now)).toBe("Tomorrow, 8:00 AM")
+    // 23:30 UTC on the 21st is already the 22nd in Madrid.
+    expect(formatNextEpisode("2026-09-21T23:30:00.000Z", "Europe/Madrid", now)).toBe("Tomorrow, 1:30 AM")
+  })
+
+  it("names the weekday within the coming week", () => {
+    expect(formatNextEpisode("2026-09-28T06:00:00.000Z", "Europe/Madrid", Date.parse("2026-09-22T05:00:00.000Z"))).toBe("Monday, 8:00 AM")
+    expect(formatNextEpisode("2026-09-25T06:00:00.000Z", "Europe/Madrid", now)).toBe("Friday, 8:00 AM")
+  })
+
+  it("gives the date beyond a week", () => {
+    expect(formatNextEpisode("2026-10-15T06:00:00.000Z", "Europe/Madrid", now)).toBe("Oct 15, 8:00 AM")
+  })
+})
+
 describe("summarizeSchedule", () => {
+  const now = Date.parse("2026-09-21T05:00:00.000Z")
+
   it("has nothing to say before a schedule is saved or while the server is unreachable", () => {
     expect(summarizeSchedule(null)).toEqual({ active: false })
     expect(summarizeSchedule({ configured: false, enabled: false, nextDeliveryAt: null, run: null })).toEqual({ active: false })
   })
 
   it("is active with the next delivery, the frequency and the weekday or day of the month", () => {
-    expect(summarizeSchedule(scheduled())).toEqual({ active: true, frequency: "Every day", nextDelivery: "Tue, Sep 22, 8:00 AM", timeZone: "Europe/Madrid" })
-    expect(summarizeSchedule(scheduled({ frequency: "weekly", weekday: "wed" })).frequency).toBe("Every Wednesday")
-    expect(summarizeSchedule(scheduled({ frequency: "monthly", dayOfMonth: 15 })).frequency).toBe("Monthly on the 15th")
+    expect(summarizeSchedule(scheduled(), now)).toEqual({ active: true, frequency: "Every day", nextDelivery: "Tomorrow, 8:00 AM" })
+    expect(summarizeSchedule(scheduled({ frequency: "weekly", weekday: "wed" }), now).frequency).toBe("Every Wednesday")
+    expect(summarizeSchedule(scheduled({ frequency: "monthly", dayOfMonth: 15 }), now).frequency).toBe("Monthly on the 15th")
   })
 
-  it("is inactive when switched off, and still says what is stored", () => {
-    expect(summarizeSchedule(scheduled({ enabled: false, nextDeliveryAt: null }))).toEqual({ active: false, frequency: "Every day", timeZone: "Europe/Madrid" })
+  it("has nothing to say when switched off", () => {
+    expect(summarizeSchedule(scheduled({ enabled: false, nextDeliveryAt: null }), now)).toEqual({ active: false })
   })
 
   it("says 'No interests selected' for an enabled schedule that has none, and that it resumes", () => {
-    const summary = summarizeSchedule(scheduled({ interests: [], paused: "no-interests", nextDeliveryAt: null }))
+    const summary = summarizeSchedule(scheduled({ interests: [], paused: "no-interests", nextDeliveryAt: null }), now)
 
     expect(summary).toMatchObject({ active: false, frequency: "Every day", paused: expect.stringContaining("No interests selected") })
     expect(summary.paused).toContain("resumes")
@@ -126,7 +148,7 @@ describe("summarizeSchedule", () => {
   })
 
   it("does not call a schedule that is switched off 'paused', whatever its interests", () => {
-    expect(summarizeSchedule(scheduled({ enabled: false, interests: [], paused: null, nextDeliveryAt: null })).paused).toBeUndefined()
+    expect(summarizeSchedule(scheduled({ enabled: false, interests: [], paused: null, nextDeliveryAt: null }), now).paused).toBeUndefined()
   })
 })
 
@@ -136,27 +158,22 @@ describe("describeRun", () => {
     expect(describeRun(undefined)).toBeNull()
   })
 
-  it("describes a run in progress, and a second attempt", () => {
-    expect(describeRun(run({ status: "running", finishedAt: undefined }))).toMatchObject({ kind: "running", title: "Generating your scheduled episode" })
-    const retrying = describeRun(run({ status: "running", attempts: 2, finishedAt: undefined }))
-    expect(retrying).toMatchObject({ kind: "running", title: "Trying again to generate your scheduled episode" })
-    expect(retrying?.detail).toContain("8:00 AM")
+  it("describes a run in progress, on a second attempt too, without exposing the retry or the pipeline", () => {
+    const message = { kind: "running", title: "Working on your new podcast, it will be ready soon." }
+    expect(describeRun(run({ status: "running", finishedAt: undefined }))).toEqual(message)
+    expect(describeRun(run({ status: "running", attempts: 2, finishedAt: undefined }))).toEqual(message)
   })
 
-  it("describes an episode that arrived on time and one that was late", () => {
-    expect(describeRun(run())).toEqual({ kind: "completed", title: "Your scheduled episode is ready", detail: "Ready at 7:52 AM for the 8:00 AM delivery." })
-    expect(describeRun(run({ late: true, finishedAt: "2026-09-21T06:12:00.000Z" }))).toEqual({
-      kind: "late",
-      title: "Your scheduled episode arrived late",
-      detail: "It was due at 8:00 AM and was ready at 8:12 AM.",
-    })
+  it("does not announce a finished run, on time or late: the episode is there and how long it took is of no use", () => {
+    expect(describeRun(run())).toBeNull()
+    expect(describeRun(run({ late: true, finishedAt: "2026-09-21T06:12:00.000Z" }))).toBeNull()
   })
 
   it("describes a failure with the safe message, and says when both attempts were used", () => {
     const failed = describeRun(run({ status: "failed", attempts: 2, message: "We couldn't select stories for this episode.", late: undefined }))
     expect(failed).toEqual({
       kind: "failed",
-      title: "We couldn't generate your scheduled episode",
+      title: "We couldn't generate your scheduled podcast",
       detail: "We couldn't select stories for this episode. We tried twice.",
     })
     expect(describeRun(run({ status: "failed", attempts: 1, message: "Nope." }))?.detail).toBe("Nope.")
@@ -166,21 +183,20 @@ describe("describeRun", () => {
 describe("isBannerWorthy", () => {
   const now = Date.parse("2026-09-21T09:00:00.000Z")
 
-  it("shows a run that is generating, a failure and a late episode", () => {
+  it("shows a run that is generating and a failure", () => {
     expect(isBannerWorthy(run({ status: "running", finishedAt: undefined }), now)).toBe(true)
     expect(isBannerWorthy(run({ status: "failed", message: "x" }), now)).toBe(true)
-    expect(isBannerWorthy(run({ late: true }), now)).toBe(true)
   })
 
-  it("does not announce an episode that arrived on time", () => {
+  it("never shows a finished episode, late or not", () => {
     expect(isBannerWorthy(run(), now)).toBe(false)
+    expect(isBannerWorthy(run({ late: true }), now)).toBe(false)
     expect(isBannerWorthy(null, now)).toBe(false)
   })
 
-  it("lets a failure or a late episode go after a day, but not a run that is still going", () => {
+  it("lets a failure go after a day, but not a run that is still going", () => {
     const dayAndAHalfLater = now + 36 * 60 * 60 * 1000
     expect(isBannerWorthy(run({ status: "failed", message: "x" }), dayAndAHalfLater)).toBe(false)
-    expect(isBannerWorthy(run({ late: true }), dayAndAHalfLater)).toBe(false)
     expect(isBannerWorthy(run({ status: "running", finishedAt: undefined }), dayAndAHalfLater)).toBe(true)
   })
 })

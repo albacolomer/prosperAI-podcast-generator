@@ -1,14 +1,12 @@
-import { Calendar, ChevronUp, Clock, Globe, MessageSquareText, Settings2 } from "lucide-react"
+import { Calendar, ChevronUp, Globe, MessageSquareText, Settings2 } from "lucide-react"
 import { type ReactNode, useState } from "react"
 import { LanguageSelect } from "@/components/settings/LanguageSelect"
 import { ScheduleFields } from "@/components/settings/ScheduleFields"
 import { ToneSelect } from "@/components/settings/ToneSelect"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { formatDuration } from "@/lib/format"
 import { cn } from "@/lib/utils"
-import { EPISODE_DURATION_MINUTES } from "@/types"
-import type { PodcastSettings, ScheduleStatus } from "@/types"
+import type { PodcastSettings } from "@/types"
 
 interface SettingsSidebarCardProps {
   hasInterests: boolean
@@ -16,8 +14,6 @@ interface SettingsSidebarCardProps {
   updateDraft: (partial: Partial<PodcastSettings>) => void
   isDirty: boolean
   onSave: () => void
-  /** The schedule as the server holds it; `null` until it has answered. */
-  scheduleStatus: ScheduleStatus | null
 }
 
 interface SettingRowProps {
@@ -38,8 +34,9 @@ function SettingRow({ icon, label, children }: SettingRowProps) {
   )
 }
 
-export function SettingsSidebarCard({ hasInterests, settings, updateDraft, isDirty, onSave, scheduleStatus }: SettingsSidebarCardProps) {
-  const [expanded, setExpanded] = useState(true)
+export function SettingsSidebarCard({ hasInterests, settings, updateDraft, isDirty, onSave }: SettingsSidebarCardProps) {
+  // Secondary to the Generate button: closed until the user opens it. It stays as they leave it while the page is open.
+  const [expanded, setExpanded] = useState(false)
   const gated = !hasInterests
   // Without interests the only change worth saving is switching the schedule off; everything else is gated.
   const saveBlocked = gated && settings.scheduleEnabled
@@ -55,6 +52,7 @@ export function SettingsSidebarCard({ hasInterests, settings, updateDraft, isDir
       <button
         type="button"
         onClick={() => setExpanded((prev) => !prev)}
+        aria-expanded={expanded}
         className="flex w-full items-center justify-between"
       >
         <span className="flex items-center gap-2 font-semibold text-foreground">
@@ -74,21 +72,12 @@ export function SettingsSidebarCard({ hasInterests, settings, updateDraft, isDir
             />
           </SettingRow>
 
-          <SettingRow icon={<Clock className="size-4 text-muted-foreground" />} label="Duration">
-            <div className="flex items-center gap-2">
-              <span className="rounded-full bg-secondary px-2.5 py-0.5 text-sm font-medium text-foreground">
-                {formatDuration(EPISODE_DURATION_MINUTES * 60)}
-              </span>
-              <span className="text-xs text-muted-foreground">Every episode is 10 minutes</span>
-            </div>
-          </SettingRow>
-
           <SettingRow icon={<MessageSquareText className="size-4 text-muted-foreground" />} label="Tone">
             <ToneSelect value={settings.tone} onChange={(tone) => updateDraft({ tone })} disabled={gated} />
           </SettingRow>
 
           <SettingRow icon={<Calendar className="size-4 text-muted-foreground" />} label="Schedule">
-            <ScheduleFields settings={settings} updateDraft={updateDraft} disabled={gated} hasInterests={hasInterests} status={scheduleStatus} />
+            <ScheduleFields settings={settings} updateDraft={updateDraft} disabled={gated} hasInterests={hasInterests} />
           </SettingRow>
 
           {saveBlocked ? (
