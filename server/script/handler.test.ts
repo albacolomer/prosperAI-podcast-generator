@@ -148,12 +148,12 @@ describe("POST /api/generate-script", () => {
     expect(body.title).toBe("A Title")
     expect(body.script).toBe("Hook.\n\nStory.\n\nBye.")
     expect(body.segments).toHaveLength(3)
-    expect(body.stats).toMatchObject({ targetWords: 750, model: "gpt-5-mini" })
+    expect(body.stats).toMatchObject({ targetWords: 750, model: "gpt-5.5" })
     expect(body.plan.stories.map((s) => s.storyId)).toEqual(["a"])
     expect(body.validation.stats).toMatchObject({ targetWords: 750, maxWords: 863, aiReview: "passed" })
     expect(body.stages.planner.model).toBe("gpt-5-mini")
     expect(body.audioToken).toBe(signValidatedScript({ script: body.script, language: "en" }, "sk-secret-key"))
-    expect(createScript).toHaveBeenCalledWith({ apiKey: "sk-secret-key", modelName: "gpt-5-mini" })
+    expect(createScript).toHaveBeenCalledWith({ apiKey: "sk-secret-key", modelName: "gpt-5.5" })
   })
 
   it("reports a failed validation as 200 with passed: false, not as an error", async () => {

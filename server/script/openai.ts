@@ -6,7 +6,7 @@ import type { ReviewModel } from "./review.js"
 import { REVIEW_ISSUE_TYPES } from "./reviewPrompt.js"
 import type { ScriptModel } from "./writer.js"
 
-export const DEFAULT_SCRIPT_MODEL = "gpt-5-mini"
+export const DEFAULT_SCRIPT_MODEL = "gpt-5.5"
 // The planner and the reviewer have their own defaults so that raising the writer's model never raises theirs.
 export const DEFAULT_PLANNER_MODEL = "gpt-5-mini"
 export const DEFAULT_REVIEW_MODEL = "gpt-5-mini"
