@@ -1,6 +1,6 @@
-import { AudioLines } from "lucide-react"
 import { useCallback, useState } from "react"
 import { GeneratingOverlay } from "@/components/onboarding/GeneratingOverlay"
+import { OnboardingBrandHeader } from "@/components/onboarding/OnboardingBrandHeader"
 import { OnboardingStepShell } from "@/components/onboarding/OnboardingStepShell"
 import { ReadyScreen } from "@/components/onboarding/ReadyScreen"
 import { SimulatedHome } from "@/components/onboarding/SimulatedHome"
@@ -51,6 +51,7 @@ export function OnboardingPage() {
   if (phase === "simulatedHome" && committed) {
     return (
       <div className="min-h-svh bg-background">
+        <OnboardingBrandHeader />
         <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-10">
           <SimulatedHome episode={committed.episode} answers={committed.answers} />
         </main>
@@ -60,12 +61,7 @@ export function OnboardingPage() {
 
   return (
     <div className="flex min-h-svh flex-col bg-background">
-      <header className="flex h-16 shrink-0 items-center px-4 sm:px-6">
-        <div className="mx-auto flex w-full max-w-xl items-center gap-2 font-semibold tracking-tight text-foreground">
-          <AudioLines className="size-6 text-primary" strokeWidth={2.5} />
-          <span className="text-base">ProsperPod</span>
-        </div>
-      </header>
+      <OnboardingBrandHeader />
 
       <main className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
         <div className="mx-auto flex min-h-full w-full max-w-xl items-center justify-center">

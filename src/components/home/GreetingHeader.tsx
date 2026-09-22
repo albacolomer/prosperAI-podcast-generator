@@ -13,7 +13,7 @@ interface GreetingHeaderProps {
   scheduleStatus: ScheduleStatus | null
 }
 
-function getGreeting(): { text: string; emoji: string } {
+export function getGreeting(): { text: string; emoji: string } {
   const hour = new Date().getHours()
   if (hour < 5) return { text: "Good night", emoji: "🌙" }
   if (hour < 12) return { text: "Good morning", emoji: "☀️" }

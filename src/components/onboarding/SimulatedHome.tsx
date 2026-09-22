@@ -3,12 +3,15 @@ import { toast } from "sonner"
 import { LastEpisodeCard } from "@/components/episodes/LastEpisodeCard"
 import { OtherEpisodesSection } from "@/components/episodes/OtherEpisodesSection"
 import { GenerationStatusCard } from "@/components/home/GenerationStatusCard"
-import { GreetingHeader } from "@/components/home/GreetingHeader"
+import { getGreeting } from "@/components/home/GreetingHeader"
 import { InterestsSidebarCard } from "@/components/home/InterestsSidebarCard"
 import { ScheduledRunBanner } from "@/components/home/ScheduledRunBanner"
+import { ScheduleSummary } from "@/components/home/ScheduleSummary"
 import { SettingsSidebarCard } from "@/components/home/SettingsSidebarCard"
 import { createInterest } from "@/hooks/useInterests"
 import { useMockPlayer } from "@/hooks/useMockPlayer"
+import { mockCurrentUser } from "@/data/mockUser"
+import { buildMockScheduleStatus } from "@/lib/onboardingSchedulePreview"
 import type { Episode, EpisodeFeedback, Interest, PodcastSettings } from "@/types"
 import { EPISODE_DURATION_MINUTES } from "@/types"
 import type { OnboardingAnswers } from "@/types/onboarding"
@@ -66,19 +69,29 @@ export function SimulatedHome({ episode, answers }: SimulatedHomeProps) {
     setInterests((prev) => prev.map((interest) => (interest.id === id ? { ...interest, selected: !interest.selected } : interest)))
   }
 
-  function handleGenerate() {
-    toast.info("This is a demo of your first podcast", {
-      description: "Generating another episode isn't available in the onboarding preview.",
-    })
-  }
-
   function handleSaveSettings() {
     toast.success("Settings saved", { description: "This is a preview — nothing is sent to the server." })
   }
 
+  const { text: greetingText, emoji: greetingEmoji } = getGreeting()
+  const dateLabel = new Date().toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long" })
+  const selectedLabels = interests.filter((interest) => interest.selected).map((interest) => interest.label)
+  const mockScheduleStatus = buildMockScheduleStatus(settings, selectedLabels)
+
   return (
     <div className="flex flex-col gap-8">
-      <GreetingHeader onGenerate={handleGenerate} generating={false} gated={false} scheduleStatus={null} />
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-sm text-muted-foreground">{dateLabel}</p>
+          <h1 className="mt-1 flex items-center gap-2 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+            {greetingText}, {mockCurrentUser.name}
+            <span aria-hidden="true">{greetingEmoji}</span>
+          </h1>
+          <p className="mt-1 text-muted-foreground">Here's your latest episode, freshly generated from the topics you care about.</p>
+        </div>
+
+        <ScheduleSummary status={mockScheduleStatus} />
+      </div>
 
       <ScheduledRunBanner run={null} configProblem={null} />
       <GenerationStatusCard state={{ status: "idle" }} onDismissError={() => {}} />
