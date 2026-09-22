@@ -143,6 +143,30 @@ describe("recent podcasts", () => {
     expect(screen.getByText("Recent podcasts")).toBeTruthy()
   })
 
+  it("lets a 'Recent podcasts' row's overflow menu, not only the featured card, show its summary", async () => {
+    installFakeApi(undefined, [generatedEpisode2, generatedEpisode])
+    const user = userEvent.setup()
+    renderHome()
+
+    await screen.findByText(generatedEpisode.title)
+    await user.click(screen.getByRole("button", { name: `More options for ${generatedEpisode2.title}` }))
+    await user.click(await screen.findByRole("menuitem", { name: /view summary/i }))
+
+    expect(await screen.findByText(generatedEpisode2.description)).toBeTruthy()
+  })
+
+  it("lets a 'Recent podcasts' row's overflow menu, not only the featured card, show its sources", async () => {
+    installFakeApi(undefined, [generatedEpisode2, generatedEpisode])
+    const user = userEvent.setup()
+    renderHome()
+
+    await screen.findByText(generatedEpisode.title)
+    await user.click(screen.getByRole("button", { name: `More options for ${generatedEpisode2.title}` }))
+    await user.click(await screen.findByRole("menuitem", { name: /see sources/i }))
+
+    expect(await screen.findByText(generatedEpisode2.sources[0].name)).toBeTruthy()
+  })
+
   it("shows up to two more podcasts under 'Recent podcasts', beyond the featured one", async () => {
     installFakeApi(undefined, [generatedEpisode3, generatedEpisode2, generatedEpisode])
     renderHome()

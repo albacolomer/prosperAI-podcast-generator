@@ -75,3 +75,31 @@ describe("real podcasts only", () => {
     expect(document.body.textContent).not.toMatch(/Your First ProsperPod|Inside the New Wave of Foundation Models/i)
   })
 })
+
+describe("summary and sources", () => {
+  // generatedEpisode2 is the second row here (generatedEpisode is newer), proving this isn't only on a featured card.
+  it("lets a row's overflow menu show its summary", async () => {
+    installFakeApi(undefined, [generatedEpisode2, generatedEpisode])
+    const user = userEvent.setup()
+    renderEpisodes()
+
+    await screen.findByText(generatedEpisode.title)
+    await user.click(screen.getByRole("button", { name: `More options for ${generatedEpisode2.title}` }))
+    await user.click(await screen.findByRole("menuitem", { name: /view summary/i }))
+
+    expect(await screen.findByText(generatedEpisode2.description)).toBeTruthy()
+    expect(screen.getByText(generatedEpisode2.topics[0])).toBeTruthy()
+  })
+
+  it("lets a row's overflow menu show its sources", async () => {
+    installFakeApi(undefined, [generatedEpisode2, generatedEpisode])
+    const user = userEvent.setup()
+    renderEpisodes()
+
+    await screen.findByText(generatedEpisode.title)
+    await user.click(screen.getByRole("button", { name: `More options for ${generatedEpisode2.title}` }))
+    await user.click(await screen.findByRole("menuitem", { name: /see sources/i }))
+
+    expect(await screen.findByText(generatedEpisode2.sources[0].name)).toBeTruthy()
+  })
+})
