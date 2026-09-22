@@ -24,16 +24,6 @@ const titleFragments: Record<string, string> = {
   "Gaming": "Gaming",
 }
 
-/** Maps an onboarding interest to the closest key in topicGradients.ts, for a cover that isn't always the same grey default. */
-const gradientTopicByInterest: Record<string, string> = {
-  "AI & Technology": "Artificial Intelligence",
-  "Startups": "Startups",
-  "Finance": "Personal Finance",
-  "Economics": "Personal Finance",
-  "Climate": "Climate Tech",
-  "Health": "Health & Wellness",
-}
-
 function buildTitle(interests: string[]): string {
   const words = interests.map((interest) => titleFragments[interest] ?? interest)
   if (words.length === 0) return "Your First ProsperPod"
@@ -56,9 +46,6 @@ function buildDescription(interests: string[], toneLabel: string, languageLabel:
 export function buildFirstPodcastEpisode(answers: OnboardingAnswers): Episode {
   const tone = tones.find((option) => option.id === answers.tone) ?? tones[0]
   const language = mockLanguages.find((option) => option.code === answers.language) ?? mockLanguages[0]
-  const interests = answers.interests.length > 0 ? answers.interests : ["your interests"]
-
-  const gradientTopic = gradientTopicByInterest[interests[0]]
 
   return {
     id: "onboarding-first-episode",
@@ -69,6 +56,6 @@ export function buildFirstPodcastEpisode(answers: OnboardingAnswers): Episode {
     description: buildDescription(answers.interests, tone.label, language.label),
     topics: answers.interests,
     sources: [{ name: "Handpicked from the topics you chose" }],
-    coverGradient: gradientForTopic(gradientTopic),
+    coverGradient: gradientForTopic(),
   }
 }

@@ -61,10 +61,10 @@ describe("serverConfigProblem", () => {
 })
 
 describe("checkRunnable", () => {
-  it("gives the request a scheduled run would make: the saved settings and the fixed 10-minute length", () => {
+  it("gives the request a scheduled run would make: the saved settings and the fixed 9-minute length", () => {
     const runnable = checkRunnable(config({ interests: ["Space"], language: "es", tone: "humorous" }), ENV)
 
-    expect(runnable).toEqual({ ok: true, request: { interests: ["Space"], language: "es", tone: "humorous", durationMinutes: 10 } })
+    expect(runnable).toEqual({ ok: true, request: { interests: ["Space"], language: "es", tone: "humorous", durationMinutes: 9 } })
   })
 
   it("reports the server's problem first", () => {

@@ -70,15 +70,15 @@ describe("POST /api/generate-episode", () => {
     expect(deps.voice).toHaveBeenCalledTimes(1)
   })
 
-  it("passes the request's settings on to the pipeline, always with a 10-minute duration", async () => {
+  it("passes the request's settings on to the pipeline, always with a 9-minute duration", async () => {
     const deps = happyDeps()
     await (await run({ ...request, language: "fr", tone: "journalistic", durationMinutes: 20 }, deps)).text()
     expect(deps.news.fetchCandidateArticles).toHaveBeenCalledWith({ interests: request.interests })
-    expect(vi.mocked(deps.script).mock.calls[0][0]).toMatchObject({ language: "fr", tone: "journalistic", durationMinutes: 10 })
+    expect(vi.mocked(deps.script).mock.calls[0][0]).toMatchObject({ language: "fr", tone: "journalistic", durationMinutes: 9 })
 
     const without = happyDeps()
     await (await run({ interests: request.interests, language: "en", tone: "conversational" }, without)).text()
-    expect(vi.mocked(without.script).mock.calls[0][0]).toMatchObject({ durationMinutes: 10 })
+    expect(vi.mocked(without.script).mock.calls[0][0]).toMatchObject({ durationMinutes: 9 })
   })
 
   it("reports a failed stage as an error event with the safe message", async () => {

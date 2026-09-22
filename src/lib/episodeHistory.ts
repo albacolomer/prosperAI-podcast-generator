@@ -11,7 +11,7 @@ export function toEpisode(podcast: StoredPodcast): Episode {
     description: podcast.description,
     topics: podcast.topics,
     sources: podcast.sources,
-    coverGradient: gradientForTopic(podcast.topics[0]),
+    coverGradient: gradientForTopic(),
     audioUrl: podcast.audioUrl,
     downloadUrl: podcast.downloadUrl,
     downloadFilename: podcast.downloadFilename,

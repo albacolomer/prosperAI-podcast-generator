@@ -50,6 +50,6 @@ describe("normalizeSettings", () => {
   })
 
   it("keeps the episode length fixed whatever was saved", () => {
-    expect(normalizeSettings({ durationMinutes: 45 }).durationMinutes).toBe(10)
+    expect(normalizeSettings({ durationMinutes: 45 }).durationMinutes).toBe(9)
   })
 })

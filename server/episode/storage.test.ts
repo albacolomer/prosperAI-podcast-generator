@@ -112,9 +112,9 @@ describe("saveFailedScript", () => {
 
 describe("parseEpisodeRequest", () => {
   const settings = { interests: ["AI"], language: "en", tone: "conversational" }
-  const fixed = { ...settings, durationMinutes: 10 }
+  const fixed = { ...settings, durationMinutes: 9 }
 
-  it("takes the user's settings and fixes the duration at 10 minutes", () => {
+  it("takes the user's settings and fixes the duration at 9 minutes", () => {
     expect(parseEpisodeRequest(settings)).toEqual({ ok: true, request: fixed })
   })
 
@@ -123,7 +123,7 @@ describe("parseEpisodeRequest", () => {
     expect(parsed).toEqual({ ok: true, request: fixed })
   })
 
-  it("ignores a duration a client sends: it is always 10 minutes", () => {
+  it("ignores a duration a client sends: it is always 9 minutes", () => {
     for (const durationMinutes of [3, 10.5, 20, 60, 61, "long"]) {
       expect(parseEpisodeRequest({ ...settings, durationMinutes })).toEqual({ ok: true, request: fixed })
     }

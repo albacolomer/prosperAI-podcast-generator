@@ -84,14 +84,14 @@ describe("a slot that is due", () => {
     })
   })
 
-  it("uses the saved interests, language and tone, and the fixed 10-minute length", async () => {
+  it("uses the saved interests, language and tone, and the fixed 9-minute length", async () => {
     await seed({ interests: ["Space"], language: "es", tone: "humorous" })
     const deps = happyDeps()
 
     await tick(deps)
 
     expect(deps.news.fetchCandidateArticles).toHaveBeenCalledWith({ interests: ["Space"] })
-    expect(deps.script).toHaveBeenCalledWith(expect.objectContaining({ interests: ["Space"], language: "es", tone: "humorous", durationMinutes: 10 }), expect.anything())
+    expect(deps.script).toHaveBeenCalledWith(expect.objectContaining({ interests: ["Space"], language: "es", tone: "humorous", durationMinutes: 9 }), expect.anything())
   })
 
   it("does nothing before generation starts, and does not touch the services", async () => {
