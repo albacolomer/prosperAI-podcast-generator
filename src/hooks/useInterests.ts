@@ -4,12 +4,13 @@ import { STORAGE_KEYS } from "@/lib/constants"
 import { readStorage, writeStorage } from "@/lib/storage"
 import type { Interest } from "@/types"
 
-function createInterest(label: string): Interest {
+/** The same shape Home stores an interest in, reused wherever else an `Interest[]` needs to be built (e.g. from onboarding). */
+export function createInterest(label: string, selected = true): Interest {
   return {
     id: `interest-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     label,
     createdAt: new Date().toISOString(),
-    selected: true,
+    selected,
   }
 }
 

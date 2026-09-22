@@ -3,6 +3,7 @@ export const ROUTES = {
   episodes: "/episodes",
   dashboard: "/dashboard",
   newsDebug: "/news-debug",
+  onboarding: "/onboarding",
 } as const
 
 export const STORAGE_KEYS = {
