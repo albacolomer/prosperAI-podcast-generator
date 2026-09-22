@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react"
-import { mockEpisodes } from "@/data/mockEpisodes"
 import { STORAGE_KEYS } from "@/lib/constants"
 import { fetchStoredEpisodes } from "@/lib/episodeApi"
 import { mergeEpisodes, sortByNewest, toEpisode } from "@/lib/episodeHistory"
@@ -45,7 +44,8 @@ export function useEpisodes() {
 
   useEffect(() => writeStorage(STORAGE_KEYS.generatedEpisodes, generatedEpisodes), [generatedEpisodes])
 
-  const episodes = sortByNewest([...generatedEpisodes, ...mockEpisodes])
+  // Real podcasts only: nothing mocked is ever mixed in here (the onboarding demo has its own isolated state).
+  const episodes = generatedEpisodes
 
   /** Adds a podcast the server just generated and stored; it is already in the server's list, so it also survives a reload. */
   const addGeneratedEpisode = useCallback((generated: GeneratedEpisode) => {

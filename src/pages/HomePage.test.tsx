@@ -7,7 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { seedInterests } from "@/data/seedInterests"
 import { tones } from "@/data/tones"
 import { STORAGE_KEYS } from "@/lib/constants"
-import { configuredSchedule, generatedEpisode, installDomPolyfills, installFakeApi } from "@/test/dom"
+import { configuredSchedule, generatedEpisode, generatedEpisode2, generatedEpisode3, installDomPolyfills, installFakeApi } from "@/test/dom"
 import type { ScheduleRunStatus } from "@/types"
 import { HomePage } from "./HomePage"
 
@@ -15,7 +15,6 @@ vi.setConfig({ testTimeout: 20_000 })
 
 const ALL_INTERESTS = seedInterests.map((interest) => interest.label)
 const WAITING = "Working on your new podcast, it will be ready soon."
-const GENERATING = "Generating your new podcast, this may take a few minutes."
 /** What the pipeline calls its stages. None of these may reach the Home page. */
 const STAGE_WORDS = /Finding stories|Researching|Planning episode|Writing script|Checking script|Generating audio|Ranking|Validation/i
 
@@ -54,7 +53,6 @@ const selectShowing = (root: HTMLElement, value: string) => {
   return trigger
 }
 
-const generateButton = () => screen.getByRole("button", { name: /Generate new podcast|Generating/ })
 const weekdayState = () => screen.getAllByRole("radio").map((radio) => [radio.getAttribute("aria-label"), radio.getAttribute("aria-checked") === "true"] as const)
 const chosenWeekdays = () => weekdayState().filter(([, chosen]) => chosen).map(([name]) => name)
 
@@ -69,23 +67,21 @@ afterEach(() => {
 })
 
 describe("the primary action area", () => {
-  it("says 'Generate new podcast'", async () => {
+  it("has no manual 'generate' action: podcasts arrive on the schedule", async () => {
     installFakeApi()
     renderHome()
 
-    expect(generateButton().textContent).toBe("Generate new podcast")
-    expect(document.body.textContent).not.toMatch(/Generate new episode/i)
+    await screen.findByText(/Your podcasts are generated automatically/i)
+    expect(screen.queryByRole("button", { name: /generate/i })).toBeNull()
+    expect(document.body.textContent).not.toMatch(/Generate new podcast|Generate new episode/i)
   })
 
-  it("shows the active schedule summary directly below the Generate button, once", async () => {
+  it("shows the active schedule summary once, under the greeting", async () => {
     installFakeApi(configuredSchedule({ enabled: true, interests: ALL_INTERESTS, nextDeliveryAt: new Date(Date.now() + 2 * 60 * 60_000).toISOString() }))
     const user = userEvent.setup()
     renderHome()
 
     const summary = await screen.findByTestId("schedule-summary")
-    expect(generateButton().compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    // Same block as the button, not somewhere further down the page.
-    expect(generateButton().closest("div[class*='flex-col']")?.contains(summary)).toBe(true)
     expect(summary.textContent).toContain("Schedule active · Every day")
     expect(summary.textContent).toMatch(/Next episode: (Today|Tomorrow), \d{1,2}:\d{2} [AP]M/)
 
@@ -118,6 +114,53 @@ describe("the primary action area", () => {
   })
 })
 
+describe("recent podcasts", () => {
+  it("shows an empty state, not a fabricated podcast, when none have been generated yet", async () => {
+    installFakeApi()
+    renderHome()
+
+    await screen.findByText("No podcasts yet")
+    expect(screen.getByText(/Your first podcast will arrive according to your schedule/i)).toBeTruthy()
+    expect(screen.queryByRole("heading", { name: generatedEpisode.title })).toBeNull()
+  })
+
+  it("shows the one real podcast that exists", async () => {
+    installFakeApi(undefined, [generatedEpisode])
+    renderHome()
+
+    expect(await screen.findByText(generatedEpisode.title)).toBeTruthy()
+    expect(screen.queryByText("No podcasts yet")).toBeNull()
+    expect(screen.queryByText(generatedEpisode2.title)).toBeNull()
+  })
+
+  it("shows the newest as the featured card and the next one under 'Recent podcasts'", async () => {
+    installFakeApi(undefined, [generatedEpisode2, generatedEpisode])
+    renderHome()
+
+    expect(await screen.findByText("Latest episode")).toBeTruthy()
+    await screen.findByText(generatedEpisode.title)
+    expect(screen.getByText(generatedEpisode2.title)).toBeTruthy()
+    expect(screen.getByText("Recent podcasts")).toBeTruthy()
+  })
+
+  it("shows up to two more podcasts under 'Recent podcasts', beyond the featured one", async () => {
+    installFakeApi(undefined, [generatedEpisode3, generatedEpisode2, generatedEpisode])
+    renderHome()
+
+    await screen.findByText(generatedEpisode.title)
+    expect(screen.getByText(generatedEpisode2.title)).toBeTruthy()
+    expect(screen.getByText(generatedEpisode3.title)).toBeTruthy()
+  })
+
+  it("never shows the onboarding demo podcast or any other fabricated podcast", async () => {
+    installFakeApi(undefined, [generatedEpisode])
+    renderHome()
+
+    await screen.findByText(generatedEpisode.title)
+    expect(document.body.textContent).not.toMatch(/Your First ProsperPod|Inside the New Wave of Foundation Models/i)
+  })
+})
+
 describe("Podcast settings", () => {
   it("starts collapsed, and opens and closes on request", async () => {
     installFakeApi()
@@ -126,11 +169,11 @@ describe("Podcast settings", () => {
 
     const toggle = screen.getByRole("button", { name: /Podcast settings/i })
     expect(toggle.getAttribute("aria-expanded")).toBe("false")
-    for (const label of ["Language", "Tone", "Schedule episodes", "Save changes"]) expect(screen.queryByText(label)).toBeNull()
+    for (const label of ["Language", "Tone", "Schedule", "Save changes"]) expect(screen.queryByText(label)).toBeNull()
 
     await user.click(toggle)
     expect(toggle.getAttribute("aria-expanded")).toBe("true")
-    for (const label of ["Language", "Tone", "Schedule episodes", "Save changes"]) expect(screen.getByText(label)).toBeTruthy()
+    for (const label of ["Language", "Tone", "Schedule", "Save changes"]) expect(screen.getByText(label)).toBeTruthy()
 
     await user.click(toggle)
     expect(screen.queryByText("Tone")).toBeNull()
@@ -144,6 +187,22 @@ describe("Podcast settings", () => {
 
     expect(within(settings).queryByText(/Duration/i)).toBeNull()
     expect(within(settings).queryByText(/10 minutes/i)).toBeNull()
+  })
+
+  it("puts the on/off switch directly on the Schedule row, with no separate 'Schedule episodes' label", async () => {
+    installFakeApi()
+    const user = userEvent.setup()
+    renderHome()
+    const settings = await openSettings(user)
+
+    expect(within(settings).getByText("Schedule")).toBeTruthy()
+    expect(within(settings).queryByText("Schedule episodes")).toBeNull()
+    expect(within(settings).getAllByText("Schedule")).toHaveLength(1)
+
+    const scheduleLabel = within(settings).getByText("Schedule")
+    const scheduleRow = scheduleLabel.closest("label")?.parentElement
+    expect(scheduleRow).toBeTruthy()
+    expect(within(scheduleRow as HTMLElement).getByRole("switch")).toBeTruthy()
   })
 
   it("shows a tone's description only while the selector is open", async () => {
@@ -207,6 +266,18 @@ describe("the scheduled podcast", () => {
     await waitFor(() => expect(screen.queryByText(WAITING)).toBeNull())
   })
 
+  it("shows the newly generated podcast once a scheduled run completes", async () => {
+    const api = installFakeApi(configuredSchedule({ enabled: true, interests: ALL_INTERESTS, run: run({ status: "running", finishedAt: undefined }) }))
+    renderHome()
+    await screen.findByText(WAITING)
+
+    api.episodes = [generatedEpisode]
+    api.schedule = configuredSchedule({ enabled: true, interests: ALL_INTERESTS, run: run() })
+    document.dispatchEvent(new Event("visibilitychange"))
+
+    expect(await screen.findByText(generatedEpisode.title)).toBeTruthy()
+  })
+
   it("does not say a finished podcast was late", async () => {
     const api = installFakeApi(configuredSchedule({ enabled: true, interests: ALL_INTERESTS, run: run({ late: true }) }))
     renderHome()
@@ -232,77 +303,6 @@ describe("the scheduled podcast", () => {
     expect(banner.textContent).toContain("We couldn't generate your scheduled podcast")
     expect(banner.textContent).toContain("We couldn't validate this episode reliably. We tried twice.")
     expect(banner.textContent).not.toMatch(/stack|OpenAI|ElevenLabs|Tavily/i)
-  })
-})
-
-describe("generating a podcast", () => {
-  it("shows one simple message, disables the button, and hides every stage of the pipeline", async () => {
-    const api = installFakeApi()
-    const user = userEvent.setup()
-    renderHome()
-
-    await user.click(generateButton())
-    expect(await screen.findByText(GENERATING)).toBeTruthy()
-    expect(generateButton().hasAttribute("disabled")).toBe(true)
-
-    // The server reports every stage; none of it is shown.
-    for (const stage of ["news", "ranking", "research", "planning", "writing", "checking", "audio"]) {
-      api.generation.send({ type: "progress", stage, status: "started" })
-      api.generation.send({ type: "progress", stage, status: "done" })
-    }
-    await new Promise((resolve) => setTimeout(resolve, 50))
-    expect(screen.getByText(GENERATING)).toBeTruthy()
-    expect(document.body.textContent).not.toMatch(STAGE_WORDS)
-    const status = screen.getByRole("status")
-    expect(within(status).queryAllByRole("listitem")).toHaveLength(0)
-    expect(status.textContent).toBe(GENERATING)
-
-    // Pressing it again while it works does nothing.
-    await user.click(generateButton())
-    expect(api.generationRequests).toHaveLength(1)
-  })
-
-  it("sends only the user's settings", async () => {
-    const api = installFakeApi()
-    const user = userEvent.setup()
-    renderHome()
-
-    await user.click(generateButton())
-    await waitFor(() => expect(api.generationRequests).toHaveLength(1))
-    expect(api.generationRequests[0]).toEqual({ interests: ALL_INTERESTS, language: "en", tone: "conversational" })
-  })
-
-  it("moves on to the new podcast when it is ready", async () => {
-    const api = installFakeApi()
-    const user = userEvent.setup()
-    renderHome()
-
-    await user.click(generateButton())
-    await screen.findByText(GENERATING)
-    api.generation.send({ type: "result", episode: generatedEpisode, stats: {} })
-    api.generation.close()
-
-    await waitFor(() => expect(screen.queryByText(GENERATING)).toBeNull())
-    expect(await screen.findByRole("heading", { name: generatedEpisode.title })).toBeTruthy()
-    expect(generateButton().textContent).toBe("Generate new podcast")
-    expect(generateButton().hasAttribute("disabled")).toBe(false)
-  })
-
-  it("shows a clear error, without internals, when it fails", async () => {
-    const api = installFakeApi()
-    const user = userEvent.setup()
-    renderHome()
-
-    await user.click(generateButton())
-    await screen.findByText(GENERATING)
-    api.generation.send({ type: "error", stage: "audio", message: "We couldn't turn the script into audio. Please try again." })
-    api.generation.close()
-
-    const alert = await screen.findByRole("alert")
-    expect(alert.textContent).toContain("We couldn't create your podcast")
-    expect(alert.textContent).toContain("We couldn't turn the script into audio. Please try again.")
-    expect(screen.queryByText(GENERATING)).toBeNull()
-    expect(generateButton().hasAttribute("disabled")).toBe(false)
   })
 })
 

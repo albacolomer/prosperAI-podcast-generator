@@ -24,8 +24,9 @@ describe("when the schedule is off", () => {
   const weekly = render({ scheduleEnabled: false, frequency: "weekly" })
   const monthly = render({ scheduleEnabled: false, frequency: "monthly" })
 
-  it("shows the switch and nothing else of the schedule", () => {
-    expect(text(weekly)).toContain("Schedule episodes")
+  it("shows the switch on the Schedule row, and nothing else of the schedule", () => {
+    expect(text(weekly)).toContain("Schedule")
+    expect(text(weekly)).not.toContain("Schedule episodes")
     expect(weekly).toMatch(/role="switch"[^>]*aria-checked="false"/)
     expect(weekly).not.toContain("Frequency")
     expect(weekly).not.toContain("Delivery time")
@@ -89,6 +90,15 @@ describe("when the schedule is on", () => {
     expect(words).not.toContain("Generate one automatically")
     expect(words).not.toContain("The delivery time is when")
     expect(words).not.toMatch(/Schedule active|Schedule off|Schedule paused|Next episode/)
+  })
+})
+
+describe("the Schedule row", () => {
+  it("labels the row 'Schedule', exactly once, with no separate 'Schedule episodes' heading", () => {
+    for (const html of [render({ scheduleEnabled: false }), render({ scheduleEnabled: true })]) {
+      expect((text(html).match(/Schedule\b/g) ?? []).length).toBe(1)
+      expect(text(html)).not.toContain("Schedule episodes")
+    }
   })
 })
 

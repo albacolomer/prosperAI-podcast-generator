@@ -1,3 +1,4 @@
+import { Calendar } from "lucide-react"
 import { DayOfMonthSelect } from "@/components/settings/DayOfMonthSelect"
 import { DeliveryTimePicker } from "@/components/settings/DeliveryTimePicker"
 import { ScheduleFrequencySelect } from "@/components/settings/ScheduleFrequencySelect"
@@ -16,7 +17,11 @@ interface ScheduleFieldsProps {
   hasInterests: boolean
 }
 
-/** The schedule switch and, once it is on, the controls that say when. What the schedule is doing is shown on Home, not here. */
+/**
+ * The whole "Schedule" setting: its own row, with the on/off switch on the same line as the label (no separate
+ * "Schedule episodes" heading), and — once it is on — the controls that say when. What the schedule is doing is
+ * shown on Home, not here.
+ */
 export function ScheduleFields({ settings, updateDraft, disabled, hasInterests }: ScheduleFieldsProps) {
   // Turning the schedule on needs interests; turning it off never does, so a schedule that lost its interests can still be stopped.
   const cannotEnable = !hasInterests && !settings.scheduleEnabled
@@ -24,8 +29,9 @@ export function ScheduleFields({ settings, updateDraft, disabled, hasInterests }
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-3">
-        <Label htmlFor="schedule-enabled" className="font-medium text-foreground">
-          Schedule episodes
+        <Label htmlFor="schedule-enabled" className="flex items-center gap-2 font-medium text-foreground">
+          <Calendar className="size-4 text-muted-foreground" />
+          Schedule
         </Label>
         <Switch
           id="schedule-enabled"

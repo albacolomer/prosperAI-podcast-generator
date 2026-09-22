@@ -1,4 +1,4 @@
-import { Calendar, ChevronUp, Globe, MessageSquareText, Settings2 } from "lucide-react"
+import { ChevronUp, Globe, MessageSquareText, Settings2 } from "lucide-react"
 import { type ReactNode, useState } from "react"
 import { LanguageSelect } from "@/components/settings/LanguageSelect"
 import { ScheduleFields } from "@/components/settings/ScheduleFields"
@@ -76,9 +76,7 @@ export function SettingsSidebarCard({ hasInterests, settings, updateDraft, isDir
             <ToneSelect value={settings.tone} onChange={(tone) => updateDraft({ tone })} disabled={gated} />
           </SettingRow>
 
-          <SettingRow icon={<Calendar className="size-4 text-muted-foreground" />} label="Schedule">
-            <ScheduleFields settings={settings} updateDraft={updateDraft} disabled={gated} hasInterests={hasInterests} />
-          </SettingRow>
+          <ScheduleFields settings={settings} updateDraft={updateDraft} disabled={gated} hasInterests={hasInterests} />
 
           {saveBlocked ? (
             <Tooltip>

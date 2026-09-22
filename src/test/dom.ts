@@ -3,7 +3,7 @@
  * replaced by a small fake server, so no test can call OpenAI, GNews, Tavily or ElevenLabs.
  */
 import { vi } from "vitest"
-import type { GeneratedEpisode, ScheduleSettingsPayload, ScheduleStatus } from "@/types"
+import type { GeneratedEpisode, ScheduleSettingsPayload, ScheduleStatus, StoredPodcast } from "@/types"
 
 /** jsdom lacks the few browser APIs Radix's Select and Switch lean on. */
 export function installDomPolyfills() {
@@ -57,6 +57,26 @@ export const generatedEpisode: GeneratedEpisode = {
   downloadFilename: "prosperpod-brand-new.mp3",
 }
 
+export const generatedEpisode2: GeneratedEpisode = {
+  ...generatedEpisode,
+  id: "generated-2",
+  title: "A Second Real Podcast",
+  publishedAt: "2098-01-01T08:00:00.000Z",
+  audioUrl: "/api/episode-audio?id=generated-2",
+  downloadUrl: "/api/episode-audio?id=generated-2&download=1",
+  downloadFilename: "prosperpod-second.mp3",
+}
+
+export const generatedEpisode3: GeneratedEpisode = {
+  ...generatedEpisode,
+  id: "generated-3",
+  title: "A Third Real Podcast",
+  publishedAt: "2097-01-01T08:00:00.000Z",
+  audioUrl: "/api/episode-audio?id=generated-3",
+  downloadUrl: "/api/episode-audio?id=generated-3&download=1",
+  downloadFilename: "prosperpod-third.mp3",
+}
+
 /** A controllable POST /api/generate-episode: lines are pushed by the test, so what the UI shows while it waits can be inspected. */
 export class FakeGeneration {
   private controller!: ReadableStreamDefaultController<Uint8Array>
@@ -76,13 +96,17 @@ export class FakeGeneration {
  * A fake API server on `fetch`: the schedule it holds, the requests it received, and the generation stream a test controls.
  * Anything not listed answers 404, so an unexpected call fails loudly instead of leaving the machine.
  */
-export function installFakeApi(initial: ScheduleStatus = { configured: false, enabled: false, nextDeliveryAt: null, run: null }) {
+export function installFakeApi(
+  initial: ScheduleStatus = { configured: false, enabled: false, nextDeliveryAt: null, run: null },
+  episodes: StoredPodcast[] = [],
+) {
   const api = {
     schedule: initial,
     scheduleSaves: [] as ScheduleSettingsPayload[],
     generation: new FakeGeneration(),
     generationRequests: [] as unknown[],
     calls: [] as string[],
+    episodes,
   }
 
   vi.stubGlobal(
@@ -101,7 +125,7 @@ export function installFakeApi(initial: ScheduleStatus = { configured: false, en
         api.schedule = configuredSchedule({ ...rest, enabled, nextDeliveryAt: enabled ? "2099-01-01T07:00:00.000Z" : null })
         return json(api.schedule)
       }
-      if (url.pathname === "/api/episodes") return json({ episodes: [] })
+      if (url.pathname === "/api/episodes") return json({ episodes: api.episodes })
       if (url.pathname === "/api/generate-episode" && method === "POST") {
         api.generationRequests.push(JSON.parse(String(init?.body)))
         return new Response(api.generation.stream, { status: 200, headers: { "Content-Type": "application/x-ndjson" } })

@@ -1,15 +1,9 @@
-import { Loader2, Plus } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { ScheduleSummary } from "@/components/home/ScheduleSummary"
 import { mockCurrentUser } from "@/data/mockUser"
 import type { ScheduleStatus } from "@/types"
 
 interface GreetingHeaderProps {
-  onGenerate: () => void
-  generating: boolean
-  gated: boolean
-  /** The schedule as the server holds it; summarised under the button when it is on. */
+  /** The schedule as the server holds it; summarised under the greeting when it is on. */
   scheduleStatus: ScheduleStatus | null
 }
 
@@ -21,21 +15,10 @@ export function getGreeting(): { text: string; emoji: string } {
   return { text: "Good evening", emoji: "🌆" }
 }
 
-export function GreetingHeader({ onGenerate, generating, gated, scheduleStatus }: GreetingHeaderProps) {
+/** No manual "Generate" action: podcasts arrive on the schedule set in Podcast settings, so this only greets and summarises it. */
+export function GreetingHeader({ scheduleStatus }: GreetingHeaderProps) {
   const { text, emoji } = getGreeting()
   const dateLabel = new Date().toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long" })
-
-  const generateButton = (
-    <Button
-      type="button"
-      onClick={onGenerate}
-      disabled={generating || gated}
-      className="shrink-0 rounded-full bg-cta-strong text-cta-strong-foreground hover:bg-cta-strong/90"
-    >
-      {generating ? <Loader2 className="animate-spin" /> : <Plus />}
-      {generating ? "Generating…" : "Generate new podcast"}
-    </Button>
-  )
 
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -45,24 +28,10 @@ export function GreetingHeader({ onGenerate, generating, gated, scheduleStatus }
           {text}, {mockCurrentUser.name}
           <span aria-hidden="true">{emoji}</span>
         </h1>
-        <p className="mt-1 text-muted-foreground">
-          Here's your latest episode, freshly generated from the topics you care about.
-        </p>
+        <p className="mt-1 text-muted-foreground">Your podcasts are generated automatically, according to your schedule.</p>
       </div>
 
-      <div className="flex flex-col gap-3 sm:items-end">
-        {gated ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="inline-flex shrink-0">{generateButton}</span>
-            </TooltipTrigger>
-            <TooltipContent>Add at least one interest first</TooltipContent>
-          </Tooltip>
-        ) : (
-          generateButton
-        )}
-        <ScheduleSummary status={scheduleStatus} />
-      </div>
+      <ScheduleSummary status={scheduleStatus} />
     </div>
   )
 }

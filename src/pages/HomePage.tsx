@@ -1,15 +1,15 @@
+import { Podcast } from "lucide-react"
 import { useEffect, useRef } from "react"
 import { toast } from "sonner"
 import { LastEpisodeCard } from "@/components/episodes/LastEpisodeCard"
 import { OtherEpisodesSection } from "@/components/episodes/OtherEpisodesSection"
-import { GenerationStatusCard } from "@/components/home/GenerationStatusCard"
 import { GreetingHeader } from "@/components/home/GreetingHeader"
 import { InterestsSidebarCard } from "@/components/home/InterestsSidebarCard"
 import { ScheduledRunBanner } from "@/components/home/ScheduledRunBanner"
 import { SettingsSidebarCard } from "@/components/home/SettingsSidebarCard"
+import { EmptyState } from "@/components/shared/EmptyState"
 import { useDocumentTitle } from "@/hooks/useDocumentTitle"
 import { useEpisodeFeedback } from "@/hooks/useEpisodeFeedback"
-import { useEpisodeGeneration } from "@/hooks/useEpisodeGeneration"
 import { useEpisodes } from "@/hooks/useEpisodes"
 import { useInterests } from "@/hooks/useInterests"
 import { useMockPlayer } from "@/hooks/useMockPlayer"
@@ -18,25 +18,20 @@ import { useSchedule } from "@/hooks/useSchedule"
 import { browserTimeZone, buildSchedulePayload, interestsToSync, withInterests } from "@/lib/scheduleApi"
 import { SCHEDULE_NEEDS_INTERESTS } from "@/lib/scheduleText"
 
+/** Home shows only real, already-generated podcasts, newest first: the latest one as the featured card, two more below it under "Recent podcasts". */
+const HOME_RECENT_COUNT = 3
+
 export function HomePage() {
   useDocumentTitle("ProsperPod — Home")
 
   const { interests, addInterest, removeInterest, toggleInterestSelected } = useInterests()
   const { settings, updateDraft, save, isDirty, adoptSchedule } = usePodcastSettings()
-  const { episodes, addGeneratedEpisode, refresh: refreshEpisodes } = useEpisodes()
+  const { episodes, refresh: refreshEpisodes } = useEpisodes()
   const schedule = useSchedule()
   const { feedback, setEpisodeFeedback } = useEpisodeFeedback()
   const episodePlayer = useMockPlayer()
-  const generation = useEpisodeGeneration({
-    onEpisode: ({ episode }) => {
-      addGeneratedEpisode(episode)
-      toast.success("New podcast ready!", { description: episode.title })
-    },
-  })
-  const generating = generation.state.status === "running"
 
-  const [latestEpisode, ...restEpisodes] = episodes
-  const otherEpisodes = restEpisodes.slice(0, 3)
+  const [latestEpisode, ...otherEpisodes] = episodes.slice(0, HOME_RECENT_COUNT)
   const selectedInterests = interests.filter((interest) => interest.selected)
   const hasInterests = selectedInterests.length > 0
 
@@ -106,45 +101,39 @@ export function HomePage() {
     toast.success(`Added "${label}" to your interests`)
   }
 
-  function handleGenerate() {
-    if (!hasInterests || generating) return
-    if (scheduleStatus?.run?.status === "running") {
-      toast.info("A scheduled podcast is being generated right now", { description: "It will appear here as soon as it is ready." })
-      return
-    }
-    // The user's settings are the whole request: the server runs the pipeline and owns the voice and the 10-minute length.
-    void generation.start({
-      interests: selectedInterests.map((interest) => interest.label),
-      language: settings.language,
-      tone: settings.tone,
-    })
-  }
-
   return (
     <div className="flex flex-col gap-8">
-      <GreetingHeader onGenerate={handleGenerate} generating={generating} gated={!hasInterests} scheduleStatus={scheduleStatus} />
+      <GreetingHeader scheduleStatus={scheduleStatus} />
 
       <ScheduledRunBanner run={scheduleStatus?.run} configProblem={scheduleStatus?.configured ? scheduleStatus.configProblem : null} />
 
-      <GenerationStatusCard state={generation.state} onDismissError={generation.dismissError} />
-
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="flex flex-col gap-8">
-          <LastEpisodeCard
-            episode={latestEpisode}
-            playing={episodePlayer.isPlaying(latestEpisode.id)}
-            onTogglePlay={() => episodePlayer.toggle(latestEpisode.id)}
-            feedback={feedback[latestEpisode.id]}
-            onFeedback={(value) => setEpisodeFeedback(latestEpisode.id, value)}
-          />
+          {latestEpisode ? (
+            <>
+              <LastEpisodeCard
+                episode={latestEpisode}
+                playing={episodePlayer.isPlaying(latestEpisode.id)}
+                onTogglePlay={() => episodePlayer.toggle(latestEpisode.id)}
+                feedback={feedback[latestEpisode.id]}
+                onFeedback={(value) => setEpisodeFeedback(latestEpisode.id, value)}
+              />
 
-          <OtherEpisodesSection
-            episodes={otherEpisodes}
-            isPlaying={episodePlayer.isPlaying}
-            onTogglePlay={episodePlayer.toggle}
-            feedback={feedback}
-            onFeedback={setEpisodeFeedback}
-          />
+              <OtherEpisodesSection
+                episodes={otherEpisodes}
+                isPlaying={episodePlayer.isPlaying}
+                onTogglePlay={episodePlayer.toggle}
+                feedback={feedback}
+                onFeedback={setEpisodeFeedback}
+              />
+            </>
+          ) : (
+            <EmptyState
+              icon={<Podcast className="size-6" />}
+              title="No podcasts yet"
+              description="Your first podcast will arrive according to your schedule."
+            />
+          )}
         </div>
 
         <aside className="flex flex-col gap-6">
