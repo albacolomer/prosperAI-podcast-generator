@@ -33,9 +33,9 @@ export function EconomicsSection({ metrics }: EconomicsSectionProps) {
           change={describeChange(e.totalCost.value, e.totalCost.previous, "relative", "down")}
         />
         <StatCard
-          label="Cost per successful episode"
+          label="Cost per successful podcast"
           value={formatEuro(e.costPerSuccessfulEpisode.value)}
-          detail="Total API cost / successful episodes"
+          detail="Total API cost / successful podcasts"
           change={describeChange(e.costPerSuccessfulEpisode.value, e.costPerSuccessfulEpisode.previous, "relative", "down")}
         />
         <StatCard

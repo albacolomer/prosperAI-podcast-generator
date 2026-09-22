@@ -1,68 +1,46 @@
-import { BarList, type BarRow } from "@/components/dashboard/BarList"
-import { ChartCard } from "@/components/dashboard/ChartCard"
-import { CHART_COLORS } from "@/components/dashboard/chartColors"
-import { EngagementByInterestTable } from "@/components/dashboard/EngagementByInterestTable"
-import { MiniStat } from "@/components/dashboard/StatCard"
-import { describeChange, formatCount, formatMinutes, formatPercent } from "@/lib/analytics/format"
-import type { DashboardMetrics, NamedValue } from "@/types"
+import { useState } from "react"
+import { EngagementTable } from "@/components/dashboard/EngagementTable"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import type { ContentDimension, DashboardMetrics } from "@/types"
 
 interface ContentSectionProps {
   metrics: DashboardMetrics
 }
 
-/** Each row's share of the total, printed on the bar; the tooltip adds the episode count. */
-function shareRows(values: NamedValue[]): BarRow[] {
-  const total = values.reduce((sum, entry) => sum + entry.value, 0)
-  return values.map((entry) => {
-    const share = formatPercent(total > 0 ? entry.value / total : null, 0)
-    return { name: entry.name, value: entry.value, label: share, detail: `${share} · ${formatCount(entry.value)} episodes` }
-  })
-}
+const DIMENSION_OPTIONS: { value: ContentDimension; label: string }[] = [
+  { value: "interest", label: "Interest" },
+  { value: "language", label: "Language" },
+  { value: "tone", label: "Tone" },
+  { value: "duration", label: "Duration" },
+]
 
-/** "Conversational / Informal" -> "Conversational": the axis is narrow, the tooltip has the full name. */
-const shortTone = (name: string) => name.split(" / ")[0]
-
+/** One card: people respond differently to each interest, language, tone and duration, and a selector switches between the four,
+ * all drawn from the same underlying podcasts, sessions and feedback. */
 export function ContentSection({ metrics }: ContentSectionProps) {
   const { content } = metrics
+  const [dimension, setDimension] = useState<ContentDimension>("interest")
+  const option = DIMENSION_OPTIONS.find((entry) => entry.value === dimension) ?? DIMENSION_OPTIONS[0]
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="grid gap-4 lg:grid-cols-2">
-        <ChartCard title="Top interests" description="Episodes containing stories on each interest.">
-          <BarList rows={content.topInterests} seriesLabel="Episodes" color={CHART_COLORS.volume} formatValue={formatCount} nameWidth={156} />
-        </ChartCard>
-        <ChartCard title="Engagement by interest" description="How people respond to each interest, not only how often they get it.">
-          <EngagementByInterestTable rows={content.interestEngagement} />
-        </ChartCard>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <ChartCard title="Languages" description="Share of episodes.">
-          <BarList rows={shareRows(content.languages)} seriesLabel="Episodes" color={CHART_COLORS.volume} formatValue={formatCount} nameWidth={84} />
-        </ChartCard>
-        <ChartCard title="Tones" description="Share of episodes.">
-          <BarList
-            rows={shareRows(content.tones)}
-            seriesLabel="Episodes"
-            color={CHART_COLORS.volume}
-            formatValue={formatCount}
-            nameWidth={104}
-            formatName={shortTone}
-          />
-        </ChartCard>
-        <ChartCard title="Duration" description="Length of generated episodes." className="md:col-span-2 xl:col-span-1">
-          <div className="flex flex-col gap-4">
-            <MiniStat
-              label="Average duration"
-              value={formatMinutes(content.averageDurationMinutes.value)}
-              change={describeChange(content.averageDurationMinutes.value, content.averageDurationMinutes.previous, "relative")}
-            />
-            <BarList rows={shareRows(content.durationBuckets)} seriesLabel="Episodes" color={CHART_COLORS.volume} formatValue={formatCount} nameWidth={84} />
-          </div>
-        </ChartCard>
-      </div>
-
-      <p className="text-xs text-muted-foreground">Voice analytics — coming later. Voice selection is currently disabled, so there is no voice data to show.</p>
-    </div>
+    <Card>
+      <CardHeader>
+        <Select value={dimension} onValueChange={(value) => setDimension(value as ContentDimension)}>
+          <SelectTrigger size="sm" aria-label="Dimension" className="w-fit">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {DIMENSION_OPTIONS.map((entry) => (
+              <SelectItem key={entry.value} value={entry.value}>
+                {entry.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </CardHeader>
+      <CardContent>
+        <EngagementTable rows={content.engagementByDimension[dimension]} nameColumnLabel={option.label} />
+      </CardContent>
+    </Card>
   )
 }

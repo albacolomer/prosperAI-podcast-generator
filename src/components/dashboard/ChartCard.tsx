@@ -3,7 +3,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { cn } from "@/lib/utils"
 
 interface ChartCardProps {
-  title: string
+  /** Usually a string, but can compose in a control (e.g. a toggle) alongside the title text. */
+  title: ReactNode
   description?: ReactNode
   children: ReactNode
   className?: string

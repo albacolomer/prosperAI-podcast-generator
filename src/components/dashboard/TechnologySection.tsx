@@ -33,7 +33,7 @@ export function TechnologySection({ metrics }: TechnologySectionProps) {
           change={describeChange(t.successRate.value, t.successRate.previous, "points")}
         />
         <StatCard
-          label="Stories per episode"
+          label="Stories per podcast"
           value={formatDecimal(t.averageStoriesPerEpisode.value)}
           detail="Average"
           change={describeChange(t.averageStoriesPerEpisode.value, t.averageStoriesPerEpisode.previous, "relative")}

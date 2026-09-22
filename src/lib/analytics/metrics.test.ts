@@ -93,8 +93,8 @@ describe("metric definitions on a small dataset", () => {
     expect(m.quality.ratingRate.value).toBeCloseTo(1)
   })
 
-  it("flags an episode followed by another attempt within 24 hours as regenerated", () => {
-    expect(m.quality.regenerationRate.value).toBeCloseTo(1 / 3) // e1 only
+  it("computes dislike rate as the complement of like rate", () => {
+    expect(m.overview.dislikeRate.value).toBeCloseTo(1 / 3)
   })
 
   it("computes retention over the cohort whose window closed in the period", () => {
@@ -103,9 +103,29 @@ describe("metric definitions on a small dataset", () => {
     expect(m.usage.retention30d.value).toBeNull() // that cohort would start before the data does
   })
 
-  it("averages duration and buckets it", () => {
-    expect(m.content.averageDurationMinutes.value).toBeCloseTo(800 / 60)
-    expect(m.content.durationBuckets.map((b) => b.value)).toEqual([0, 2, 1, 0])
+  it("computes weekly and monthly active users as trailing windows anchored to the last day of data", () => {
+    // The whole small dataset's activity (Jan 1-20) falls inside both trailing windows ending Jan 21.
+    expect(m.overview.weeklyActiveUsers.value).toBe(2) // u1 and u3, same as the selected 7-day range
+    expect(m.overview.monthlyActiveUsers.value).toBe(2)
+  })
+
+  it("buckets duration, and derives every Content & engagement dimension from the same podcasts, sessions and feedback", () => {
+    const interestRows = m.content.engagementByDimension.interest
+    expect(interestRows).toHaveLength(1)
+    expect(interestRows[0]).toMatchObject({ name: "AI", episodes: 3, startedEpisodes: 3, ratings: 3 })
+    expect(interestRows[0].completionRate).toBeCloseTo(1 / 3)
+    expect(interestRows[0].likeRate).toBeCloseTo(2 / 3)
+
+    const languageRows = m.content.engagementByDimension.language
+    expect(languageRows).toEqual([expect.objectContaining({ name: "English", episodes: 3 })])
+
+    const toneRows = m.content.engagementByDimension.tone
+    expect(toneRows).toHaveLength(6) // every tone shows up, even ones with zero podcasts
+    expect(toneRows.filter((row) => row.episodes > 0)).toEqual([expect.objectContaining({ episodes: 3 })])
+
+    const durationRows = m.content.engagementByDimension.duration
+    expect(durationRows.map((row) => row.name)).toEqual(["5–10 min", "10–20 min", "20–30 min", "30+ min"])
+    expect(durationRows.map((row) => row.episodes)).toEqual([0, 2, 1, 0])
   })
 
   it("averages latency over successful episodes only, per stage", () => {
@@ -139,8 +159,10 @@ describe("metric definitions on a small dataset", () => {
     const empty = computeDashboardMetrics({ ...smallDataset(), episodes: [], sessions: [], feedback: [], researchStories: [], apiUsage: [] }, 7)
     expect(empty.overview.completionRate.value).toBeNull()
     expect(empty.overview.likeRate.value).toBeNull()
+    expect(empty.overview.dislikeRate.value).toBeNull()
     expect(empty.economics.costPerSuccessfulEpisode.value).toBeNull()
     expect(empty.quality.completionTrend.every((point) => point.value === null)).toBe(true)
+    expect(empty.quality.dislikeTrend.every((point) => point.value === null)).toBe(true)
   })
 })
 
@@ -213,11 +235,25 @@ describe("generated mock dataset", () => {
       const inRange = data.episodes.filter((e) => e.status === "success" && Date.parse(e.createdAt) >= start)
       expect(m.overview.episodesGenerated.value).toBe(inRange.length)
       expect(m.usage.episodesOverTime.reduce((sum, p) => sum + (p.value ?? 0), 0)).toBe(inRange.length)
-      expect(m.content.topInterests.every((i, n, all) => n === 0 || all[n - 1].value >= i.value)).toBe(true)
-      expect(m.content.tones.reduce((sum, t) => sum + t.value, 0)).toBe(inRange.length)
-      expect(m.content.languages.reduce((sum, l) => sum + l.value, 0)).toBe(inRange.length)
-      expect(m.content.durationBuckets.reduce((sum, b) => sum + b.value, 0)).toBe(inRange.length)
+      const { interest, language, tone, duration } = m.content.engagementByDimension
+      expect(interest.every((row, n, all) => n === 0 || all[n - 1].episodes >= row.episodes)).toBe(true)
+      expect(tone).toHaveLength(6)
+      expect(tone.reduce((sum, row) => sum + row.episodes, 0)).toBe(inRange.length)
+      expect(language.reduce((sum, row) => sum + row.episodes, 0)).toBe(inRange.length)
+      expect(duration.map((row) => row.name)).toEqual(["5–10 min", "10–20 min", "20–30 min", "30+ min"])
+      expect(duration.reduce((sum, row) => sum + row.episodes, 0)).toBe(inRange.length)
     }
+  })
+
+  it("reports weekly active users at most monthly active users, both independent of the selected range", () => {
+    for (const days of RANGES) {
+      const m = computeDashboardMetrics(data, days)
+      expect(m.overview.weeklyActiveUsers.value).toBeLessThanOrEqual(m.overview.monthlyActiveUsers.value)
+    }
+    // WAU/MAU are trailing windows anchored to the latest day of data, so they don't move with the selected range.
+    const [wau7, wau30, wau90] = RANGES.map((days) => computeDashboardMetrics(data, days).overview.weeklyActiveUsers.value)
+    expect(wau7).toBe(wau30)
+    expect(wau30).toBe(wau90)
   })
 
   it("yields plausible rates and no NaN or infinite numbers in any range", () => {
@@ -231,12 +267,21 @@ describe("generated mock dataset", () => {
       walk(m, "metrics")
       expect(bad).toEqual([])
 
-      for (const rate of [m.overview.completionRate, m.overview.likeRate, m.overview.retention7d, m.quality.regenerationRate, m.technology.successRate, m.personalization.researchReuseRate]) {
+      for (const rate of [
+        m.overview.completionRate,
+        m.overview.likeRate,
+        m.overview.dislikeRate,
+        m.overview.retention7d,
+        m.technology.successRate,
+        m.personalization.researchReuseRate,
+      ]) {
         expect(rate.value).not.toBeNull()
         expect(rate.value!).toBeGreaterThan(0)
         expect(rate.value!).toBeLessThan(1)
       }
+      expect(m.overview.likeRate.value! + m.overview.dislikeRate.value!).toBeCloseTo(1)
       expect(m.overview.activeUsers.value).toBeLessThanOrEqual(m.overview.totalUsers.value)
+      expect(m.overview.weeklyActiveUsers.value).toBeLessThanOrEqual(m.overview.monthlyActiveUsers.value)
     }
   })
 
@@ -246,8 +291,17 @@ describe("generated mock dataset", () => {
     expect(weekly).toHaveLength(13)
     expect(weekly.reduce((sum, p) => sum + p.days, 0)).toBe(90)
     // 30 days is 4 weeks and 2 days: the 2 days join the first week instead of forming a noisy bucket of their own.
-    const likes = computeDashboardMetrics(data, 30).quality.likeTrend
-    expect(likes.map((p) => p.days)).toEqual([9, 7, 7, 7])
+    const metrics30 = computeDashboardMetrics(data, 30)
+    expect(metrics30.quality.likeTrend.map((p) => p.days)).toEqual([9, 7, 7, 7])
     expect(computeDashboardMetrics(data, 7).quality.likeTrend).toHaveLength(7)
+
+    // Like and dislike trends share the same buckets, and sum to 1 wherever both are known.
+    expect(metrics30.quality.dislikeTrend.map((p) => p.days)).toEqual(metrics30.quality.likeTrend.map((p) => p.days))
+    for (let i = 0; i < metrics30.quality.likeTrend.length; i++) {
+      const like = metrics30.quality.likeTrend[i].value
+      const dislike = metrics30.quality.dislikeTrend[i].value
+      if (like === null) expect(dislike).toBeNull()
+      else expect(like + dislike!).toBeCloseTo(1)
+    }
   })
 })

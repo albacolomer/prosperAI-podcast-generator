@@ -10,6 +10,8 @@ import { cn } from "@/lib/utils"
 export function MobileNavSheet() {
   const [open, setOpen] = useState(false)
 
+  if (navItems.length === 0) return null
+
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>

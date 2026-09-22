@@ -5,13 +5,13 @@ import {
   ANALYTICS_STAGES,
   type AnalyticsData,
   type ApiProvider,
+  type ContentDimension,
   type DashboardMetrics,
   type DashboardRange,
-  type InterestEngagement,
+  type DimensionEngagement,
   type KpiValue,
   type MockEpisode,
   type MockListeningSession,
-  type NamedValue,
   type AnalyticsStage,
   type ProviderValue,
   type RateValue,
@@ -20,18 +20,17 @@ import {
 } from "@/types"
 
 // Every dashboard number is computed here from the raw records in AnalyticsData. Definitions:
-//  - active user: generated an episode, or listened to at least 60 seconds, during the period.
-//  - completed: listened to at least 80% of the episode (the session's `completed` flag). Completion rate = completed / started episodes.
-//  - like rate: likes / (likes + dislikes), over the episodes generated in the period.
-//  - rating rate: (likes + dislikes) / episodes generated.
-//  - regeneration rate: episodes followed by another attempt from the same user within 24 hours. A proxy for friction, not a dislike.
+//  - active user: generated a podcast, or listened to at least 60 seconds, during the period.
+//  - weekly/monthly active users: active users in the trailing 7 or 30 days, independent of the selected range.
+//  - completed: listened to at least 80% of the podcast (the session's `completed` flag). Completion rate = completed / started podcasts.
+//  - like rate: likes / (likes + dislikes), over the podcasts generated in the period. Dislike rate is the complement.
+//  - rating rate: (likes + dislikes) / podcasts generated.
 //  - N-day retention: of the users who signed up N days before the period ended (a cohort whose window has closed), the share
 //    that generated or listened on any later day within N days of signing up.
 //  - research reuse rate: researched stories that served more than one user.
 
 const DAY_MS = 86_400_000
 const ACTIVE_LISTEN_SECONDS = 60
-const REGENERATION_WINDOW_MS = DAY_MS
 
 export const STAGE_LABELS: Record<AnalyticsStage, string> = {
   "news-discovery": "News Discovery",
@@ -69,8 +68,6 @@ interface Index {
   usage: Timed<AnalyticsData["apiUsage"][number]>[]
   episodeById: Map<string, MockEpisode>
   feedbackByEpisode: Map<string, { likes: number; dislikes: number }>
-  /** Successful episodes followed by another attempt from the same user within 24 hours. */
-  regenerated: Set<string>
   /** UTC day numbers on which each user generated or listened, ascending. */
   activityDays: Map<string, number[]>
 }
@@ -108,15 +105,6 @@ function buildIndex(data: AnalyticsData): Index {
     feedbackByEpisode.set(entry.episodeId, counts)
   }
 
-  const regenerated = new Set<string>()
-  const lastAttempt = new Map<string, Timed<MockEpisode>>()
-  for (let i = episodes.length - 1; i >= 0; i--) {
-    const current = episodes[i]
-    const next = lastAttempt.get(current.item.userId)
-    if (current.item.status === "success" && next && next.ms - current.ms <= REGENERATION_WINDOW_MS) regenerated.add(current.item.id)
-    lastAttempt.set(current.item.userId, current)
-  }
-
   const activityDays = new Map<string, Set<number>>()
   const markActive = (userId: string, ms: number) => {
     const days = activityDays.get(userId) ?? new Set<number>()
@@ -137,20 +125,22 @@ function buildIndex(data: AnalyticsData): Index {
     usage: timed(data.apiUsage, (u) => u.timestamp),
     episodeById: new Map(data.episodes.map((episode) => [episode.id, episode])),
     feedbackByEpisode,
-    regenerated,
     activityDays: new Map([...activityDays].map(([userId, days]) => [userId, [...days].sort((a, b) => a - b)])),
   }
   indexCache.set(data, index)
   return index
 }
 
-interface InterestTally {
+/** Podcasts, starts, completions and ratings tallied for one row of one dimension (an interest, a language, a tone, a duration bucket). */
+interface DimensionTally {
   episodes: number
   started: number
   completed: number
   likes: number
   dislikes: number
 }
+
+const emptyTally = (): DimensionTally => ({ episodes: 0, started: 0, completed: 0, likes: 0, dislikes: 0 })
 
 interface PeriodStats {
   totalUsers: number
@@ -163,8 +153,6 @@ interface PeriodStats {
   listenThroughSum: number
   likes: number
   dislikes: number
-  regenObserved: number
-  regenerated: number
   durationSum: number
   storiesSum: number
   latencySum: number
@@ -179,10 +167,11 @@ interface PeriodStats {
   costByProvider: Record<ApiProvider, number>
   costByStage: Record<AnalyticsStage, number>
   requestsByStage: Record<AnalyticsStage, number>
-  interests: Map<string, InterestTally>
-  languages: Map<string, number>
-  tones: Map<string, number>
-  durationBuckets: number[]
+  interests: Map<string, DimensionTally>
+  languages: Map<string, DimensionTally>
+  tones: Map<string, DimensionTally>
+  /** Fixed length 4, indexed by durationBucket(). */
+  durationBuckets: DimensionTally[]
 }
 
 const perStage = <T>(initial: T): Record<AnalyticsStage, T> => Object.fromEntries(ANALYTICS_STAGES.map((stage) => [stage, initial])) as Record<AnalyticsStage, T>
@@ -208,8 +197,6 @@ function periodStats(index: Index, period: Period): PeriodStats {
     listenThroughSum: 0,
     likes: 0,
     dislikes: 0,
-    regenObserved: 0,
-    regenerated: 0,
     durationSum: 0,
     storiesSum: 0,
     latencySum: 0,
@@ -227,13 +214,13 @@ function periodStats(index: Index, period: Period): PeriodStats {
     interests: new Map(),
     languages: new Map(),
     tones: new Map(),
-    durationBuckets: [0, 0, 0, 0],
+    durationBuckets: [emptyTally(), emptyTally(), emptyTally(), emptyTally()],
   }
 
   const active = new Set<string>()
-  const tally = (interest: string) => {
-    let entry = stats.interests.get(interest)
-    if (!entry) stats.interests.set(interest, (entry = { episodes: 0, started: 0, completed: 0, likes: 0, dislikes: 0 }))
+  const tally = (map: Map<string, DimensionTally>, key: string) => {
+    let entry = map.get(key)
+    if (!entry) map.set(key, (entry = emptyTally()))
     return entry
   }
 
@@ -256,28 +243,31 @@ function periodStats(index: Index, period: Period): PeriodStats {
       stats.stageLatencySum[stage] += seconds
       stats.stageLatencyCount[stage]++
     }
-    stats.languages.set(episode.language, (stats.languages.get(episode.language) ?? 0) + 1)
-    stats.tones.set(episode.tone, (stats.tones.get(episode.tone) ?? 0) + 1)
-    stats.durationBuckets[durationBucket(episode.durationSeconds)]++
 
     const ratings = index.feedbackByEpisode.get(episode.id)
     if (ratings) {
       stats.likes += ratings.likes
       stats.dislikes += ratings.dislikes
     }
+    const addRatings = (entry: DimensionTally) => {
+      if (!ratings) return
+      entry.likes += ratings.likes
+      entry.dislikes += ratings.dislikes
+    }
     for (const interest of episode.interests) {
-      const entry = tally(interest)
+      const entry = tally(stats.interests, interest)
       entry.episodes++
-      if (ratings) {
-        entry.likes += ratings.likes
-        entry.dislikes += ratings.dislikes
-      }
+      addRatings(entry)
     }
-    // Only episodes whose 24 hours have fully elapsed can be judged.
-    if (ms + REGENERATION_WINDOW_MS <= index.coverageEndMs) {
-      stats.regenObserved++
-      if (index.regenerated.has(episode.id)) stats.regenerated++
-    }
+    const languageEntry = tally(stats.languages, episode.language)
+    languageEntry.episodes++
+    addRatings(languageEntry)
+    const toneEntry = tally(stats.tones, episode.tone)
+    toneEntry.episodes++
+    addRatings(toneEntry)
+    const bucketEntry = stats.durationBuckets[durationBucket(episode.durationSeconds)]
+    bucketEntry.episodes++
+    addRatings(bucketEntry)
   }
 
   for (const { item: session, ms } of index.sessions) {
@@ -288,11 +278,14 @@ function periodStats(index: Index, period: Period): PeriodStats {
     stats.started++
     stats.listenThroughSum += Math.min(1, session.listenedSeconds / episode.durationSeconds)
     if (session.completed) stats.completed++
-    for (const interest of episode.interests) {
-      const entry = tally(interest)
+    const addStart = (entry: DimensionTally) => {
       entry.started++
       if (session.completed) entry.completed++
     }
+    for (const interest of episode.interests) addStart(tally(stats.interests, interest))
+    addStart(tally(stats.languages, episode.language))
+    addStart(tally(stats.tones, episode.tone))
+    addStart(stats.durationBuckets[durationBucket(episode.durationSeconds)])
   }
   stats.activeUsers = active.size
 
@@ -367,7 +360,7 @@ function episodesOverTime(index: Index, period: Period): TrendPoint[] {
   })
 }
 
-function rateTrends(index: Index, period: Period, days: number): { completion: TrendPoint[]; like: TrendPoint[] } {
+function rateTrends(index: Index, period: Period, days: number): { completion: TrendPoint[]; like: TrendPoint[]; dislike: TrendPoint[] } {
   // Daily rates get noisy over long ranges (and ratings are rare: about one episode in five), so they are shown weekly.
   const completionBuckets = buildBuckets(period, days > 30 ? "weekly" : "daily")
   const likeBuckets = buildBuckets(period, days > 7 ? "weekly" : "daily")
@@ -381,7 +374,9 @@ function rateTrends(index: Index, period: Period, days: number): { completion: T
     }
     return toPoint(bucket, ratio(completed, started))
   })
-  const like = likeBuckets.map((bucket) => {
+  const like: TrendPoint[] = []
+  const dislike: TrendPoint[] = []
+  for (const bucket of likeBuckets) {
     let likes = 0
     let ratings = 0
     for (const { item, ms } of index.episodes) {
@@ -391,9 +386,10 @@ function rateTrends(index: Index, period: Period, days: number): { completion: T
       likes += counts.likes
       ratings += counts.likes + counts.dislikes
     }
-    return toPoint(bucket, ratio(likes, ratings))
-  })
-  return { completion, like }
+    like.push(toPoint(bucket, ratio(likes, ratings)))
+    dislike.push(toPoint(bucket, ratio(ratings - likes, ratings)))
+  }
+  return { completion, like, dislike }
 }
 
 const kpi = (value: number, previous: number | null): KpiValue => ({ value, previous })
@@ -401,7 +397,18 @@ const rate = (value: number | null, previous: number | null): RateValue => ({ va
 
 const languageLabel = (code: string) => mockLanguages.find((language) => language.code === code)?.label ?? code.toUpperCase()
 
-const byValueDesc = (a: NamedValue, b: NamedValue) => b.value - a.value || a.name.localeCompare(b.name)
+/** A dimension's tallies, turned into ranked table rows. Duration buckets pass their own order instead (short to long, not by volume). */
+function toEngagement(entries: [string, DimensionTally][], rank = true): DimensionEngagement[] {
+  const rows = entries.map(([name, t]) => ({
+    name,
+    episodes: t.episodes,
+    startedEpisodes: t.started,
+    completionRate: ratio(t.completed, t.started),
+    ratings: t.likes + t.dislikes,
+    likeRate: ratio(t.likes, t.likes + t.dislikes),
+  }))
+  return rank ? rows.sort((a, b) => b.episodes - a.episodes || a.name.localeCompare(b.name)) : rows
+}
 
 export function computeDashboardMetrics(data: AnalyticsData, days: DashboardRange): DashboardMetrics {
   const index = buildIndex(data)
@@ -422,6 +429,7 @@ export function computeDashboardMetrics(data: AnalyticsData, days: DashboardRang
 
   const completionRate = (s: PeriodStats) => ratio(s.completed, s.started)
   const likeRate = (s: PeriodStats) => ratio(s.likes, s.likes + s.dislikes)
+  const dislikeRate = (s: PeriodStats) => ratio(s.dislikes, s.likes + s.dislikes)
   const successRate = (s: PeriodStats) => ratio(s.generated, s.attempts)
 
   const retention7 = retention(index, period, 7)
@@ -429,21 +437,29 @@ export function computeDashboardMetrics(data: AnalyticsData, days: DashboardRang
   const retention30 = retention(index, period, 30)
   const retention30Previous = previousPeriod ? retention(index, previousPeriod, 30) : null
 
+  // WAU/MAU are trailing 7- and 30-day windows anchored to the most recent day of data, not to the selected range:
+  // picking "Last 90 days" still reports this week's and this month's active users, not the range's.
+  const week = rangePeriods(index, 7)
+  const weekStats = periodStats(index, week.current)
+  const weekPrevious = week.previous ? periodStats(index, week.previous) : null
+  const month = rangePeriods(index, 30)
+  const monthStats = periodStats(index, month.current)
+  const monthPrevious = month.previous ? periodStats(index, month.previous) : null
+
   const trends = rateTrends(index, period, days)
 
   const stageValues = (values: Record<AnalyticsStage, number>): StageValue[] =>
     ANALYTICS_STAGES.map((stage) => ({ stage, label: STAGE_LABELS[stage], value: values[stage] }))
 
-  const interestEngagement: InterestEngagement[] = [...now.interests]
-    .map(([interest, tallyEntry]) => ({
-      interest,
-      episodes: tallyEntry.episodes,
-      startedEpisodes: tallyEntry.started,
-      completionRate: ratio(tallyEntry.completed, tallyEntry.started),
-      ratings: tallyEntry.likes + tallyEntry.dislikes,
-      likeRate: ratio(tallyEntry.likes, tallyEntry.likes + tallyEntry.dislikes),
-    }))
-    .sort((a, b) => b.episodes - a.episodes || a.interest.localeCompare(b.interest))
+  const engagementByDimension: Record<ContentDimension, DimensionEngagement[]> = {
+    interest: toEngagement([...now.interests]),
+    language: toEngagement([...now.languages].map(([code, t]): [string, DimensionTally] => [languageLabel(code), t])),
+    tone: toEngagement(tones.map((tone): [string, DimensionTally] => [tone.label, now.tones.get(tone.id) ?? emptyTally()])),
+    duration: toEngagement(
+      DURATION_BUCKETS.map((name, i): [string, DimensionTally] => [name, now.durationBuckets[i]]),
+      false,
+    ),
+  }
 
   const averageLatency = (s: PeriodStats) => ratio(s.latencySum, s.generated)
 
@@ -464,10 +480,13 @@ export function computeDashboardMetrics(data: AnalyticsData, days: DashboardRang
       totalUsers: kpiOf((s) => s.totalUsers),
       activeUsers: kpiOf((s) => s.activeUsers),
       activeShare: ratio(now.activeUsers, now.totalUsers),
+      weeklyActiveUsers: kpi(weekStats.activeUsers, weekPrevious?.activeUsers ?? null),
+      monthlyActiveUsers: kpi(monthStats.activeUsers, monthPrevious?.activeUsers ?? null),
       episodesGenerated: kpiOf((s) => s.generated),
       completionRate: rateOf(completionRate),
       startedEpisodes: now.started,
       likeRate: rateOf(likeRate),
+      dislikeRate: rateOf(dislikeRate),
       ratingsCount: now.likes + now.dislikes,
       retention7d: rate(retention7?.rate ?? null, retention7Previous?.rate ?? null),
       retention7dCohort: retention7?.cohort ?? 0,
@@ -483,23 +502,15 @@ export function computeDashboardMetrics(data: AnalyticsData, days: DashboardRang
     },
 
     content: {
-      topInterests: interestEngagement.map((entry) => ({ name: entry.interest, value: entry.episodes })).sort(byValueDesc),
-      interestEngagement,
-      languages: [...now.languages].map(([code, value]) => ({ name: languageLabel(code), value })).sort(byValueDesc),
-      tones: tones.map((tone) => ({ name: tone.label, value: now.tones.get(tone.id) ?? 0 })).sort(byValueDesc),
-      averageDurationMinutes: rateOf((s) => {
-        const seconds = ratio(s.durationSum, s.generated)
-        return seconds === null ? null : seconds / 60
-      }),
-      durationBuckets: DURATION_BUCKETS.map((name, i) => ({ name, value: now.durationBuckets[i] })),
+      engagementByDimension,
     },
 
     quality: {
       completionTrend: trends.completion,
       likeTrend: trends.like,
+      dislikeTrend: trends.dislike,
       averageListenThrough: rateOf((s) => ratio(s.listenThroughSum, s.started)),
       ratingRate: rateOf((s) => ratio(s.likes + s.dislikes, s.generated)),
-      regenerationRate: rateOf((s) => ratio(s.regenerated, s.regenObserved)),
     },
 
     personalization: {

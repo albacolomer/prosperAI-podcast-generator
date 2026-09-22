@@ -11,21 +11,29 @@ interface UsageSectionProps {
 }
 
 export function UsageSection({ metrics }: UsageSectionProps) {
-  const { usage } = metrics
+  const { overview, usage } = metrics
 
   return (
     <div className="grid gap-4 lg:grid-cols-3">
-      <ChartCard title="Episodes generated" description="Successfully generated episodes per day." className="lg:col-span-2">
-        <TrendChart data={usage.episodesOverTime} seriesLabel="Episodes generated" color={CHART_COLORS.volume} formatValue={formatCount} />
+      <ChartCard title="Podcasts generated" description="Successfully generated podcasts per day." className="lg:col-span-2">
+        <TrendChart data={usage.episodesOverTime} seriesLabel="Podcasts generated" color={CHART_COLORS.volume} formatValue={formatCount} />
       </ChartCard>
 
       <div className="flex flex-col gap-4">
-        <StatCard
-          label="Episodes per active user"
-          value={formatDecimal(usage.episodesPerActiveUser.value)}
-          detail="Episodes generated / active users"
-          change={describeChange(usage.episodesPerActiveUser.value, usage.episodesPerActiveUser.previous, "relative")}
-        />
+        <div className="grid grid-cols-2 gap-4">
+          <StatCard
+            label="Active users"
+            value={formatCount(overview.activeUsers.value)}
+            detail={`${formatPercent(overview.activeShare, 0)} of all users`}
+            change={describeChange(overview.activeUsers.value, overview.activeUsers.previous, "relative")}
+          />
+          <StatCard
+            label="Podcasts per active user"
+            value={formatDecimal(usage.episodesPerActiveUser.value)}
+            detail="Generated / active users"
+            change={describeChange(usage.episodesPerActiveUser.value, usage.episodesPerActiveUser.previous, "relative")}
+          />
+        </div>
         <Card className="flex-1">
           <CardHeader>
             <CardTitle>Retention</CardTitle>

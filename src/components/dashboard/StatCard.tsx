@@ -61,3 +61,31 @@ export function MiniStat({ label, value, detail, change }: Omit<StatCardProps, "
     </div>
   )
 }
+
+interface RateSplitCardProps {
+  label: string
+  /** A 0-1 share; the bar splits between it and its complement. Null draws an empty bar. */
+  likeShare: number | null
+  likeValue: string
+  dislikeValue: string
+}
+
+/** A KPI card that shows a rate and its complement together (like vs. dislike) instead of splitting them across two cards. */
+export function RateSplitCard({ label, likeShare, likeValue, dislikeValue }: RateSplitCardProps) {
+  const likePercent = Math.round((likeShare ?? 0) * 100)
+  return (
+    <Card size="sm">
+      <CardContent className="flex flex-col gap-2">
+        <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{label}</p>
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="text-sm font-semibold tabular-nums text-status-good">Like {likeValue}</span>
+          <span className="text-sm font-semibold tabular-nums text-status-bad">Dislike {dislikeValue}</span>
+        </div>
+        <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-muted">
+          <div className="h-full bg-status-good" style={{ width: `${likePercent}%` }} />
+          <div className="h-full bg-status-bad" style={{ width: `${100 - likePercent}%` }} />
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
